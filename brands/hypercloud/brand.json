@@ -3,9 +3,9 @@
   "appName": "Hypercloud",
   "companyName": "Connection Technologies",
   "copyright": "Hypercloud powered by Connection Technologies",
-  "domain": "",
-  "apiUrl": "",
-  "wsUrl": "",
+  "domain": "appmanager.hyperclouduk.com",
+  "apiUrl": "https://appmanager.hyperclouduk.com",
+  "wsUrl": "wss://appmanager.hyperclouduk.com",
 
   "colors": {
     "navy": "#1a3a5c",

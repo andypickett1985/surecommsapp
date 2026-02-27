@@ -40,12 +40,38 @@ replaceInDir(path.join(buildDir, 'src'), replacements, extensions);
 console.log('3. Applying colors...');
 if (brandJson.colors) {
   const colorReplacements = [];
-  if (brandJson.colors.navy) colorReplacements.push(['#202A44', brandJson.colors.navy]);
-  if (brandJson.colors.accent) colorReplacements.push(['#CE0037', brandJson.colors.accent]);
-  if (brandJson.colors.electricBlue) colorReplacements.push(['#4C00FF', brandJson.colors.electricBlue]);
+  if (brandJson.colors.navy) {
+    colorReplacements.push(['#202A44', brandJson.colors.navy]);
+    colorReplacements.push(['#2a3654', brandJson.colors.secondary || lighten(brandJson.colors.navy)]);
+    colorReplacements.push(['#151d30', brandJson.colors.dark || darken(brandJson.colors.navy)]);
+  }
+  if (brandJson.colors.accent) {
+    colorReplacements.push(['#CE0037', brandJson.colors.accent]);
+    colorReplacements.push(['#a8002d', brandJson.colors.accent]);
+  }
+  if (brandJson.colors.electricBlue || brandJson.colors.cloud) {
+    colorReplacements.push(['#4C00FF', brandJson.colors.electricBlue || brandJson.colors.accent]);
+    colorReplacements.push(['#6B33FF', brandJson.colors.cloud || brandJson.colors.accent]);
+  }
+  if (brandJson.colors.cloud) {
+    colorReplacements.push(['#E5E1E6', brandJson.colors.cloud]);
+  }
   if (colorReplacements.length) {
     replaceInDir(path.join(buildDir, 'src'), colorReplacements, ['.jsx', '.css']);
   }
+}
+
+function lighten(hex) {
+  const r = Math.min(255, parseInt(hex.slice(1,3),16) + 30);
+  const g = Math.min(255, parseInt(hex.slice(3,5),16) + 30);
+  const b = Math.min(255, parseInt(hex.slice(5,7),16) + 30);
+  return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;
+}
+function darken(hex) {
+  const r = Math.max(0, parseInt(hex.slice(1,3),16) - 20);
+  const g = Math.max(0, parseInt(hex.slice(3,5),16) - 20);
+  const b = Math.max(0, parseInt(hex.slice(5,7),16) - 20);
+  return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;
 }
 
 // 4. Copy brand logos

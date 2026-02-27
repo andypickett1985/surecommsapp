@@ -1,0 +1,49 @@
+{
+  "id": "surecloudvoice",
+  "appName": "SureCloudVoice",
+  "companyName": "Sure",
+  "copyright": "SureCloudVoice by Sure",
+  "domain": "communicator.surecloudvoice.com",
+  "apiUrl": "https://communicator.surecloudvoice.com",
+  "wsUrl": "wss://communicator.surecloudvoice.com",
+
+  "colors": {
+    "navy": "#202A44",
+    "red": "#CE0037",
+    "electricBlue": "#4C00FF",
+    "cloud": "#E5E1E6",
+    "primary": "#202A44",
+    "accent": "#CE0037"
+  },
+
+  "logos": {
+    "horizontal": "img/logo-horizontal.png",
+    "vertical": "logo-vertical.png",
+    "icon": "logo-icon.png",
+    "iconIco": "icon.ico",
+    "iconPng": "icon.png"
+  },
+
+  "email": {
+    "from": "noreply@surecloudvoice.com",
+    "fromName": "SureCloudVoice",
+    "smtpApiKey": "api-3E400A868D944A4AAD18B4B43DAAF09D"
+  },
+
+  "features": {
+    "aiTranscription": true,
+    "chat": true,
+    "videoCall": false,
+    "callRecording": true,
+    "smsIntegration": false,
+    "customWebPages": false,
+    "gsmDialling": false,
+    "screenshotPrevention": false
+  },
+
+  "installer": {
+    "appId": "com.sure.surecloudvoice",
+    "productName": "SureCloudVoice",
+    "publisherName": "Sure"
+  }
+}

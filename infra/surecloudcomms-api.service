@@ -1,0 +1,15 @@
+[Unit]
+Description=SureCloudComms Provisioning API
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/surecloudcomms/api
+ExecStart=/usr/bin/node src/server.js
+Restart=on-failure
+RestartSec=5
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

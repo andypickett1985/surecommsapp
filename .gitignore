@@ -1,0 +1,15 @@
+node_modules/
+dist-renderer/
+dist/
+out/
+*.exe
+*.dll
+*.obj
+*.pdb
+*.lib
+*.exp
+*.log
+.env
+chat-uploads/
+downloads/
+generate-ringtones.js

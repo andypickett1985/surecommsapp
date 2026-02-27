@@ -1,0 +1,48 @@
+{
+  "id": "hypercloud",
+  "appName": "Hypercloud",
+  "companyName": "Connection Technologies",
+  "copyright": "Hypercloud powered by Connection Technologies",
+  "domain": "",
+  "apiUrl": "",
+  "wsUrl": "",
+
+  "colors": {
+    "navy": "#1a3a5c",
+    "accent": "#6db4d6",
+    "primary": "#1a3a5c",
+    "secondary": "#4a8aaa",
+    "cloud": "#a8d8ea",
+    "dark": "#0d1f33"
+  },
+
+  "logos": {
+    "horizontal": "img/logo-horizontal.png",
+    "vertical": "img/logo-horizontal.png",
+    "icon": "icon.png",
+    "iconIco": "icon.ico"
+  },
+
+  "email": {
+    "from": "",
+    "fromName": "Hypercloud",
+    "smtpApiKey": ""
+  },
+
+  "features": {
+    "aiTranscription": true,
+    "chat": true,
+    "videoCall": false,
+    "callRecording": true,
+    "smsIntegration": false,
+    "customWebPages": false,
+    "gsmDialling": false,
+    "screenshotPrevention": false
+  },
+
+  "installer": {
+    "appId": "com.connectiontechnologies.hypercloud",
+    "productName": "Hypercloud",
+    "publisherName": "Connection Technologies"
+  }
+}

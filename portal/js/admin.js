@@ -127,6 +127,7 @@ function renderTopbar() {
       h('div', { style: 'width:1px;height:24px;background:var(--g200);margin:0 8px' }),
       h('span', { style: 'font-size:13px;font-weight:600;color:var(--navy);letter-spacing:-0.3px' }, 'Admin Portal')),
     h('div', { className: 'topbar-actions' },
+      h('button', { onClick: () => navigate('/downloads'), style: 'padding:6px 12px;border-radius:6px;font-size:12px;color:var(--g600);border:1px solid var(--g200);background:white;cursor:pointer;font-weight:500;font-family:inherit;display:flex;align-items:center;gap:4px' }, '\u2B07 Downloads'),
       h('div', { style: 'display:flex;align-items:center;gap:8px;padding:4px 12px;background:var(--g50);border-radius:20px;border:1px solid var(--g200)' },
         h('div', { style: 'width:8px;height:8px;border-radius:50%;background:#10B981' }),
         h('span', { style: 'font-size:12px;color:var(--g600);font-weight:500' }, admin?.name || 'Admin')),
@@ -866,6 +867,61 @@ async function renderDiagnosticsTab(container, org, orgId) {
   } catch {}
 }
 
+/* ============ DOWNLOADS / UPDATES TAB ============ */
+async function renderDownloads() {
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+  app.appendChild(renderTopbar());
+
+  const page = h('div', { className:'page' });
+  app.appendChild(page);
+
+  page.appendChild(h('div', { style:'display:flex;justify-content:space-between;align-items:center;margin-bottom:24px' },
+    h('div', {},
+      h('h1', { style:'font-size:24px;font-weight:700;color:#18181B' }, 'App Downloads'),
+      h('p', { style:'color:#71717A;font-size:14px;margin-top:4px' }, 'Manage and distribute desktop app installers')),
+    h('div', { style:'display:flex;gap:8px' },
+      h('button', { className:'btn btn-secondary', onClick:()=>navigate('/') }, 'Back to Organizations'))));
+
+  try {
+    const versions = await api('/api/admin/versions');
+    if (!versions || versions.length === 0) {
+      page.appendChild(h('div', { style:'text-align:center;padding:60px 20px;color:#A1A1AA' },
+        h('p', { style:'font-size:14px' }, 'No app versions uploaded yet.')));
+      return;
+    }
+
+    const grid = h('div', { style:'display:grid;gap:16px' });
+    versions.forEach(v => {
+      const isLatest = v === versions[0];
+      const downloadUrl = v.download_url?.startsWith('http') ? v.download_url : (API + v.download_url);
+      const card = h('div', { style:'background:white;border:1px solid #E4E4E7;border-radius:12px;padding:20px;display:flex;align-items:center;gap:16px' + (isLatest ? ';border-color:#3B82F6;box-shadow:0 0 0 1px #3B82F6' : '') },
+        h('div', { style:'width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:#EFF6FF;color:#3B82F6;font-size:20px;flex-shrink:0' }, '\u2B07'),
+        h('div', { style:'flex:1;min-width:0' },
+          h('div', { style:'display:flex;align-items:center;gap:8px;margin-bottom:4px' },
+            h('span', { style:'font-size:16px;font-weight:600;color:#18181B' }, 'v' + (v.version || '?')),
+            isLatest ? h('span', { style:'font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:#DBEAFE;color:#2563EB;text-transform:uppercase;letter-spacing:0.5px' }, 'Latest') : null,
+            v.force_update ? h('span', { style:'font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:#FEE2E2;color:#DC2626;text-transform:uppercase;letter-spacing:0.5px' }, 'Force Update') : null),
+          h('div', { style:'font-size:13px;color:#71717A;margin-bottom:2px' }, v.release_notes || 'No release notes'),
+          h('div', { style:'font-size:11px;color:#A1A1AA' }, (v.platform || 'windows').toUpperCase() + ' \u2022 ' + new Date(v.created_at).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }))),
+        h('div', { style:'display:flex;gap:8px;flex-shrink:0' },
+          h('a', { href:downloadUrl, target:'_blank', className:'btn btn-primary', style:'text-decoration:none;display:flex;align-items:center;gap:4px' }, 'Download'),
+          h('button', { className:'btn btn-ghost', style:'font-size:12px', onClick:()=>{ navigator.clipboard.writeText(window.location.origin + v.download_url); toast('Download link copied'); } }, 'Copy Link')));
+      grid.appendChild(card);
+    });
+    page.appendChild(grid);
+
+    page.appendChild(h('div', { style:'margin-top:24px;padding:16px;background:#F9FAFB;border-radius:8px;border:1px solid #E4E4E7' },
+      h('div', { style:'font-size:12px;font-weight:600;color:#52525B;margin-bottom:4px' }, 'Public Download Page'),
+      h('div', { style:'display:flex;align-items:center;gap:8px' },
+        h('a', { href:'/download', target:'_blank', style:'font-size:13px;color:#3B82F6' }, window.location.origin + '/download'),
+        h('button', { className:'btn btn-ghost btn-sm', onClick:()=>{ navigator.clipboard.writeText(window.location.origin + '/download'); toast('Link copied'); } }, 'Copy'))));
+
+  } catch (err) {
+    page.appendChild(h('p', { style:'color:#EF4444' }, 'Error loading versions: ' + err.message));
+  }
+}
+
 /* ============ ROUTER ============ */
 async function render() {
   if (!token || !admin) { renderLogin(); return; }
@@ -873,6 +929,8 @@ async function render() {
 
   if (parts[0] === 'org' && parts[1]) {
     await renderOrgDetail(parts[1]);
+  } else if (parts[0] === 'downloads') {
+    await renderDownloads();
   } else {
     await renderOrgs();
   }

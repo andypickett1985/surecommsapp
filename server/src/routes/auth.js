@@ -10,7 +10,7 @@ router.post('/login', async (req, res) => {
     if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
 
     const result = await db.query(
-      `SELECT u.*, t.name as tenant_name, t.domain as tenant_domain, t.sip_domain as org_sip_domain, t.sip_protocol as org_protocol
+      `SELECT u.*, u.avatar_url, t.name as tenant_name, t.domain as tenant_domain, t.sip_domain as org_sip_domain, t.sip_protocol as org_protocol
        FROM users u JOIN tenants t ON u.tenant_id = t.id WHERE u.email = $1 AND u.active = true AND t.active = true`,
       [email.toLowerCase()]
     );
@@ -39,7 +39,7 @@ router.post('/login', async (req, res) => {
 
     res.json({
       token, refreshToken,
-      user: { id: user.id, email: user.email, displayName: user.display_name, tenant: user.tenant_name },
+      user: { id: user.id, email: user.email, displayName: user.display_name, avatarUrl: user.avatar_url || null, tenant: user.tenant_name },
       sipAccounts,
     });
   } catch (err) { console.error('Login error:', err); res.status(500).json({ error: 'Internal server error' }); }

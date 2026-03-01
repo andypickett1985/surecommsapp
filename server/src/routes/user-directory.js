@@ -5,7 +5,7 @@ const { authenticateToken } = require('../middleware/auth');
 router.get('/', authenticateToken, async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT u.id, u.email, u.display_name, s.sip_username as extension, s.display_name as sip_display_name,
+      `SELECT u.id, u.email, u.display_name, u.avatar_url, s.sip_username as extension, s.display_name as sip_display_name,
               COALESCE(p.status, 'offline') as presence, p.status_text, p.last_seen
        FROM users u
        LEFT JOIN sip_accounts s ON s.user_id = u.id AND s.active = true

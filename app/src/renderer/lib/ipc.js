@@ -77,4 +77,16 @@ export const fetchCallCenterQueueLive = (qId) => apiFetch(`/api/call-center/queu
 export const fetchCallCenterAvailableAgents = (qId) => apiFetch(`/api/call-center/queues/${qId}/available-agents`);
 export const addCallCenterQueueAgent = (qId, agentUuid, level, pos) => apiFetch(`/api/call-center/queues/${qId}/agents`, { method: 'POST', body: JSON.stringify({ call_center_agent_uuid: agentUuid, tier_level: level || 0, tier_position: pos || 0 }) });
 export const removeCallCenterQueueAgent = (qId, agentUuid) => apiFetch(`/api/call-center/queues/${qId}/agents/${agentUuid}`, { method: 'DELETE' });
+export const getProfile = () => apiFetch('/api/profile/me');
+export async function uploadAvatar(file) {
+  const t = _getState().token;
+  const res = await fetch(PROV + '/api/profile/avatar', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${t}`, 'Content-Type': file.type || 'application/octet-stream' },
+    body: file,
+  });
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'Upload failed'); }
+  return res.json();
+}
+export const deleteAvatar = () => apiFetch('/api/profile/avatar', { method: 'DELETE' });
 export const updatePresence = (status) => apiFetch('/api/users/presence', { method: 'PUT', body: JSON.stringify({ status }) });

@@ -18,7 +18,13 @@ export default function Settings() {
   const [previewPlaying, setPreviewPlaying] = useState(null);
   const [debugMode, setDebugMode] = useState(localStorage.getItem('scv_debug') === 'true');
   const [showDebugLog, setShowDebugLog] = useState(false);
+  const [callCenter, setCallCenter] = useState({ loading: true, enabled: false, linked: false, agent: null, statuses: [] });
+  const [ccStatus, setCcStatus] = useState('');
+  const [ccSaving, setCcSaving] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState(user?.avatarUrl || null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
   const fileInputRef = useRef(null);
+  const avatarInputRef = useRef(null);
 
   useEffect(() => {
     ipc.getCallForward().then(data => {
@@ -31,6 +37,20 @@ export default function Settings() {
       const mics = devices.filter(d => d.kind === 'audioinput');
       setAudioDevices({ speakers, mics });
     }).catch(() => {});
+
+    ipc.getCallCenterMe().then(data => {
+      const next = {
+        loading: false,
+        enabled: !!data?.enabled,
+        linked: !!data?.linked,
+        agent: data?.agent || null,
+        statuses: data?.statuses || [],
+      };
+      setCallCenter(next);
+      setCcStatus((data?.agent?.agent_status || data?.statuses?.[0] || '').trim());
+    }).catch(() => {
+      setCallCenter({ loading: false, enabled: false, linked: false, agent: null, statuses: [] });
+    });
   }, []);
 
   function handleLogout() {
@@ -147,10 +167,51 @@ export default function Settings() {
     }
   }
 
+  async function handleAvatarUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { alert('File too large. Max 2 MB.'); return; }
+    if (!file.type.startsWith('image/')) { alert('Please select an image file.'); return; }
+    setAvatarUploading(true);
+    try {
+      const result = await ipc.uploadAvatar(file);
+      if (result?.avatar_url) {
+        setAvatarUrl(result.avatar_url);
+        setState(prev => ({ user: { ...prev.user, avatarUrl: result.avatar_url } }));
+      }
+    } catch (err) {
+      alert('Upload failed: ' + (err.message || 'Unknown error'));
+    }
+    setAvatarUploading(false);
+  }
+
+  async function handleAvatarRemove() {
+    try {
+      await ipc.deleteAvatar();
+      setAvatarUrl(null);
+      setState(prev => ({ user: { ...prev.user, avatarUrl: null } }));
+    } catch {}
+  }
+
   function openDevTools() {
     // In dev mode this opens devtools
     window.electronAPI?.windowMaximize?.();
     try { require('electron').remote?.getCurrentWindow()?.webContents?.openDevTools(); } catch {}
+  }
+
+  async function saveCallCenterStatus() {
+    if (!ccStatus || !callCenter.enabled || !callCenter.linked) return;
+    setCcSaving(true);
+    try {
+      await ipc.setCallCenterStatus(ccStatus);
+      setCallCenter(prev => ({
+        ...prev,
+        agent: prev.agent ? { ...prev.agent, agent_status: ccStatus } : prev.agent,
+      }));
+    } catch (err) {
+      alert(err.message || 'Failed to set call center status');
+    }
+    setCcSaving(false);
   }
 
   return (
@@ -166,10 +227,25 @@ export default function Settings() {
         <div className="flex-1 overflow-y-auto p-5 space-y-5">
           {/* Profile */}
           <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-            <Avatar name={user?.displayName || user?.email} size="lg" presence="online" />
-            <div>
+            <div className="relative group cursor-pointer" onClick={() => avatarInputRef.current?.click()}>
+              <Avatar name={user?.displayName || user?.email} size="lg" presence="online" image={avatarUrl ? `https://appmanager.hyperclouduk.com${avatarUrl}` : undefined} />
+              <div className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+              </div>
+              {avatarUploading && <div className="absolute inset-0 rounded-full bg-white/60 flex items-center justify-center"><div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"/></div>}
+            </div>
+            <input ref={avatarInputRef} type="file" accept="image/png,image/jpeg,image/gif,image/webp" onChange={handleAvatarUpload} className="hidden" />
+            <div className="flex-1">
               <div className="text-sm font-semibold text-gray-900">{user?.displayName || 'User'}</div>
               <div className="text-xs text-gray-500">{user?.email}</div>
+              <div className="flex gap-2 mt-1">
+                <button onClick={() => avatarInputRef.current?.click()} className="text-[10px] text-blue-600 hover:text-blue-800 font-medium">
+                  {avatarUrl ? 'Change photo' : 'Upload photo'}
+                </button>
+                {avatarUrl && (
+                  <button onClick={handleAvatarRemove} className="text-[10px] text-gray-400 hover:text-red-500 font-medium">Remove</button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -267,6 +343,47 @@ export default function Settings() {
             </div>
           </section>
 
+          {/* Call Center */}
+          <section>
+            <h3 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-3">Call Center</h3>
+            {callCenter.loading ? (
+              <div className="text-xs text-gray-500">Loading call center profile...</div>
+            ) : !callCenter.enabled ? (
+              <div className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                Call center mode is not enabled for your extension.
+              </div>
+            ) : !callCenter.linked ? (
+              <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                Call center mode is enabled, but no FusionPBX call-center agent is linked yet. Ask your admin to map your user in the portal.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="text-xs text-gray-500">
+                  Linked agent: <span className="font-medium text-gray-700">{callCenter.agent?.agent_name || callCenter.agent?.agent_id || 'Agent'}</span>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Agent status</label>
+                  <select
+                    value={ccStatus}
+                    onChange={e => setCcStatus(e.target.value)}
+                    className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-blue-400 bg-white"
+                  >
+                    {(callCenter.statuses || []).map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  onClick={saveCallCenterStatus}
+                  disabled={ccSaving || !ccStatus}
+                  className="w-full py-2.5 text-sm font-medium bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white rounded-lg transition-colors"
+                >
+                  {ccSaving ? 'Updating...' : 'Set Agent Status'}
+                </button>
+              </div>
+            )}
+          </section>
+
           {/* Call Forward Settings */}
           {cf && (
             <section>
@@ -334,7 +451,7 @@ export default function Settings() {
                   </button>
                   {showDebugLog && (
                     <div className="px-3 py-2 bg-gray-900 rounded-lg text-[10px] font-mono text-green-400 max-h-40 overflow-y-auto space-y-0.5">
-                      <div>App: Hypercloud v1.5.0</div>
+                      <div>App: SureCloudVoice v1.5.0</div>
                       <div>SIP: {regStatus.code === 200 ? 'Registered' : `Error ${regStatus.code}`} {regStatus.reason}</div>
                       <div>Server: {account?.server || 'none'}</div>
                       <div>Ext: {account?.username || 'none'}</div>
@@ -359,8 +476,8 @@ export default function Settings() {
 
           <section>
             <h3 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">About</h3>
-            <p className="text-sm text-gray-500">Hypercloud v1.5.0</p>
-            <p className="text-xs text-gray-400 mt-1">Powered by Connection Technologies by Beyon</p>
+            <p className="text-sm text-gray-500">SureCloudVoice v1.5.0</p>
+            <p className="text-xs text-gray-400 mt-1">Powered by Sure by Beyon</p>
           </section>
         </div>
 
@@ -534,7 +651,7 @@ function NetworkDiagnostics({ account, user }) {
           </tbody>
         </table>`;
 
-      const report_text = `Hypercloud Network Diagnostics Report
+      const report_text = `SureCloudVoice Network Diagnostics Report
 Date: ${new Date(results.timestamp).toLocaleString()}
 User: ${user?.displayName || user?.email || '?'}
 Extension: ${results.extension}

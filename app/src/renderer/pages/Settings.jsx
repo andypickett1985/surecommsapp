@@ -21,7 +21,10 @@ export default function Settings() {
   const [callCenter, setCallCenter] = useState({ loading: true, enabled: false, linked: false, agent: null, statuses: [] });
   const [ccStatus, setCcStatus] = useState('');
   const [ccSaving, setCcSaving] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState(user?.avatarUrl || null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
   const fileInputRef = useRef(null);
+  const avatarInputRef = useRef(null);
 
   useEffect(() => {
     ipc.getCallForward().then(data => {
@@ -164,6 +167,32 @@ export default function Settings() {
     }
   }
 
+  async function handleAvatarUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { alert('File too large. Max 2 MB.'); return; }
+    if (!file.type.startsWith('image/')) { alert('Please select an image file.'); return; }
+    setAvatarUploading(true);
+    try {
+      const result = await ipc.uploadAvatar(file);
+      if (result?.avatar_url) {
+        setAvatarUrl(result.avatar_url);
+        setState(prev => ({ user: { ...prev.user, avatarUrl: result.avatar_url } }));
+      }
+    } catch (err) {
+      alert('Upload failed: ' + (err.message || 'Unknown error'));
+    }
+    setAvatarUploading(false);
+  }
+
+  async function handleAvatarRemove() {
+    try {
+      await ipc.deleteAvatar();
+      setAvatarUrl(null);
+      setState(prev => ({ user: { ...prev.user, avatarUrl: null } }));
+    } catch {}
+  }
+
   function openDevTools() {
     // In dev mode this opens devtools
     window.electronAPI?.windowMaximize?.();
@@ -198,10 +227,25 @@ export default function Settings() {
         <div className="flex-1 overflow-y-auto p-5 space-y-5">
           {/* Profile */}
           <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-            <Avatar name={user?.displayName || user?.email} size="lg" presence="online" />
-            <div>
+            <div className="relative group cursor-pointer" onClick={() => avatarInputRef.current?.click()}>
+              <Avatar name={user?.displayName || user?.email} size="lg" presence="online" image={avatarUrl ? `https://appmanager.hyperclouduk.com${avatarUrl}` : undefined} />
+              <div className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+              </div>
+              {avatarUploading && <div className="absolute inset-0 rounded-full bg-white/60 flex items-center justify-center"><div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"/></div>}
+            </div>
+            <input ref={avatarInputRef} type="file" accept="image/png,image/jpeg,image/gif,image/webp" onChange={handleAvatarUpload} className="hidden" />
+            <div className="flex-1">
               <div className="text-sm font-semibold text-gray-900">{user?.displayName || 'User'}</div>
               <div className="text-xs text-gray-500">{user?.email}</div>
+              <div className="flex gap-2 mt-1">
+                <button onClick={() => avatarInputRef.current?.click()} className="text-[10px] text-blue-600 hover:text-blue-800 font-medium">
+                  {avatarUrl ? 'Change photo' : 'Upload photo'}
+                </button>
+                {avatarUrl && (
+                  <button onClick={handleAvatarRemove} className="text-[10px] text-gray-400 hover:text-red-500 font-medium">Remove</button>
+                )}
+              </div>
             </div>
           </div>
 

@@ -67,10 +67,10 @@ export default function Login({ onSuccess }) {
       <div className="flex-1 flex flex-col items-center justify-center px-8 relative z-10 animate-fade-in">
         {/* Sure Logo */}
         <div className="mb-8">
-          <img src={sureLogo} alt="Sure by Beyon" className="h-28 w-auto drop-shadow-2xl" />
+          <img src={sureLogo} alt="Connection Technologies" className="h-28 w-auto drop-shadow-2xl" />
         </div>
 
-        <h1 className="text-xl font-bold text-white tracking-tight mb-1">SureCloudVoice</h1>
+        <h1 className="text-xl font-bold text-white tracking-tight mb-1">Hypercloud</h1>
         <p className="text-blue-100/70 text-xs mb-8">Enterprise Communications</p>
 
         {/* Form */}
@@ -117,7 +117,7 @@ export default function Login({ onSuccess }) {
           </button>
         </form>
 
-        <p className="text-blue-100/55 text-[10px] mt-10">SureCloudVoice by Sure</p>
+        <p className="text-blue-100/55 text-[10px] mt-10">Hypercloud powered by Connection Technologies</p>
       </div>
 
       <style>{`
@@ -145,7 +145,7 @@ export default function Login({ onSuccess }) {
         }
         .orb-3 {
           width: 300px; height: 300px;
-          background: #202A44;
+          background: #1a3a5c;
           opacity: 0.03;
           top: 50%; left: 30%;
           animation-duration: 22s;

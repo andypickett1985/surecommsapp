@@ -18,9 +18,6 @@ export default function Settings() {
   const [previewPlaying, setPreviewPlaying] = useState(null);
   const [debugMode, setDebugMode] = useState(localStorage.getItem('scv_debug') === 'true');
   const [showDebugLog, setShowDebugLog] = useState(false);
-  const [callCenter, setCallCenter] = useState({ loading: true, enabled: false, linked: false, agent: null, statuses: [] });
-  const [ccStatus, setCcStatus] = useState('');
-  const [ccSaving, setCcSaving] = useState(false);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -34,20 +31,6 @@ export default function Settings() {
       const mics = devices.filter(d => d.kind === 'audioinput');
       setAudioDevices({ speakers, mics });
     }).catch(() => {});
-
-    ipc.getCallCenterMe().then(data => {
-      const next = {
-        loading: false,
-        enabled: !!data?.enabled,
-        linked: !!data?.linked,
-        agent: data?.agent || null,
-        statuses: data?.statuses || [],
-      };
-      setCallCenter(next);
-      setCcStatus((data?.agent?.agent_status || data?.statuses?.[0] || '').trim());
-    }).catch(() => {
-      setCallCenter({ loading: false, enabled: false, linked: false, agent: null, statuses: [] });
-    });
   }, []);
 
   function handleLogout() {
@@ -170,21 +153,6 @@ export default function Settings() {
     try { require('electron').remote?.getCurrentWindow()?.webContents?.openDevTools(); } catch {}
   }
 
-  async function saveCallCenterStatus() {
-    if (!ccStatus || !callCenter.enabled || !callCenter.linked) return;
-    setCcSaving(true);
-    try {
-      await ipc.setCallCenterStatus(ccStatus);
-      setCallCenter(prev => ({
-        ...prev,
-        agent: prev.agent ? { ...prev.agent, agent_status: ccStatus } : prev.agent,
-      }));
-    } catch (err) {
-      alert(err.message || 'Failed to set call center status');
-    }
-    setCcSaving(false);
-  }
-
   return (
     <div className="absolute inset-0 z-40 bg-black/30 flex justify-end animate-fade-in" onClick={e => { if (e.target === e.currentTarget) setState({ showSettings: false }); }}>
       <div className="w-96 h-full bg-white shadow-2xl flex flex-col" style={{ animation: 'slideInRight 0.2s ease' }}>
@@ -299,47 +267,6 @@ export default function Settings() {
             </div>
           </section>
 
-          {/* Call Center */}
-          <section>
-            <h3 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-3">Call Center</h3>
-            {callCenter.loading ? (
-              <div className="text-xs text-gray-500">Loading call center profile...</div>
-            ) : !callCenter.enabled ? (
-              <div className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-                Call center mode is not enabled for your extension.
-              </div>
-            ) : !callCenter.linked ? (
-              <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                Call center mode is enabled, but no FusionPBX call-center agent is linked yet. Ask your admin to map your user in the portal.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="text-xs text-gray-500">
-                  Linked agent: <span className="font-medium text-gray-700">{callCenter.agent?.agent_name || callCenter.agent?.agent_id || 'Agent'}</span>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Agent status</label>
-                  <select
-                    value={ccStatus}
-                    onChange={e => setCcStatus(e.target.value)}
-                    className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-blue-400 bg-white"
-                  >
-                    {(callCenter.statuses || []).map(s => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
-                  </select>
-                </div>
-                <button
-                  onClick={saveCallCenterStatus}
-                  disabled={ccSaving || !ccStatus}
-                  className="w-full py-2.5 text-sm font-medium bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white rounded-lg transition-colors"
-                >
-                  {ccSaving ? 'Updating...' : 'Set Agent Status'}
-                </button>
-              </div>
-            )}
-          </section>
-
           {/* Call Forward Settings */}
           {cf && (
             <section>
@@ -407,7 +334,7 @@ export default function Settings() {
                   </button>
                   {showDebugLog && (
                     <div className="px-3 py-2 bg-gray-900 rounded-lg text-[10px] font-mono text-green-400 max-h-40 overflow-y-auto space-y-0.5">
-                      <div>App: SureCloudVoice v1.5.0</div>
+                      <div>App: Hypercloud v1.5.0</div>
                       <div>SIP: {regStatus.code === 200 ? 'Registered' : `Error ${regStatus.code}`} {regStatus.reason}</div>
                       <div>Server: {account?.server || 'none'}</div>
                       <div>Ext: {account?.username || 'none'}</div>
@@ -432,8 +359,8 @@ export default function Settings() {
 
           <section>
             <h3 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">About</h3>
-            <p className="text-sm text-gray-500">SureCloudVoice v1.5.0</p>
-            <p className="text-xs text-gray-400 mt-1">Powered by Sure by Beyon</p>
+            <p className="text-sm text-gray-500">Hypercloud v1.5.0</p>
+            <p className="text-xs text-gray-400 mt-1">Powered by Connection Technologies by Beyon</p>
           </section>
         </div>
 
@@ -465,7 +392,7 @@ function NetworkDiagnostics({ account, user }) {
       const times = [];
       for (let i = 0; i < 5; i++) {
         const t0 = performance.now();
-        await fetch('https://communicator.surecloudvoice.com/api/health', { cache: 'no-store' });
+        await fetch('https://appmanager.hyperclouduk.com/api/health', { cache: 'no-store' });
         times.push(Math.round(performance.now() - t0));
       }
       r.latency = { min: Math.min(...times), max: Math.max(...times), avg: Math.round(times.reduce((a,b) => a+b, 0) / times.length), samples: times };
@@ -500,7 +427,7 @@ function NetworkDiagnostics({ account, user }) {
     setTestPhase('Testing gateway...');
     try {
       const t0 = performance.now();
-      const res = await fetch('https://communicator.surecloudvoice.com/api/health', { cache: 'no-store' });
+      const res = await fetch('https://appmanager.hyperclouduk.com/api/health', { cache: 'no-store' });
       const data = await res.json();
       r.gateway = { reachable: true, time: Math.round(performance.now() - t0), version: data.version };
       r.gatewayStatus = 'connected';
@@ -512,7 +439,7 @@ function NetworkDiagnostics({ account, user }) {
       for (let i = 0; i < 3; i++) {
         setTestPhase(`Download speed (pass ${i + 1} of 3)...`);
         const t0 = performance.now();
-        const res = await fetch(`https://communicator.surecloudvoice.com/speedtest.bin?r=${Date.now()}`, { cache: 'no-store' });
+        const res = await fetch(`https://appmanager.hyperclouduk.com/speedtest.bin?r=${Date.now()}`, { cache: 'no-store' });
         const blob = await res.blob();
         const elapsed = (performance.now() - t0) / 1000;
         const mbps = (blob.size / (1024 * 1024)) / elapsed * 8;
@@ -536,7 +463,7 @@ function NetworkDiagnostics({ account, user }) {
         const payload = new Uint8Array(512 * 1024);
         crypto.getRandomValues(payload);
         const t0 = performance.now();
-        await fetch('https://communicator.surecloudvoice.com/api/speedtest/upload', {
+        await fetch('https://appmanager.hyperclouduk.com/api/speedtest/upload', {
           method: 'POST', body: payload, cache: 'no-store',
           headers: { 'Content-Type': 'application/octet-stream' },
         });
@@ -607,7 +534,7 @@ function NetworkDiagnostics({ account, user }) {
           </tbody>
         </table>`;
 
-      const report_text = `SureCloudVoice Network Diagnostics Report
+      const report_text = `Hypercloud Network Diagnostics Report
 Date: ${new Date(results.timestamp).toLocaleString()}
 User: ${user?.displayName || user?.email || '?'}
 Extension: ${results.extension}
@@ -633,7 +560,7 @@ SIP ALG: ${results.sipAlg || '?'}
 --- NAT ---
 Type: ${results.nat?.type || '?'} | ICE Candidates: ${results.nat?.candidates || '?'}`;
 
-      const resp = await fetch('https://communicator.surecloudvoice.com/api/diagnostics/email', {
+      const resp = await fetch('https://appmanager.hyperclouduk.com/api/diagnostics/email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ to_email: emailAddr.trim(), report_text, report_html }),

@@ -33,7 +33,7 @@ export async function uploadChatFile(file) {
   const formData = new FormData();
   formData.append('file', file);
   const t = _getState().token;
-  const res = await fetch('https://communicator.surecloudvoice.com/api/chat-upload', {
+  const res = await fetch('https://appmanager.hyperclouduk.com/api/chat-upload', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${t}` },
     body: formData,
@@ -46,7 +46,7 @@ export const windowMinimize = () => api.windowMinimize?.();
 export const windowMaximize = () => api.windowMaximize?.();
 export const windowClose = () => api.windowClose?.();
 
-const PROV = 'https://communicator.surecloudvoice.com';
+const PROV = 'https://appmanager.hyperclouduk.com';
 
 import { getState as _getState } from './store.js';
 

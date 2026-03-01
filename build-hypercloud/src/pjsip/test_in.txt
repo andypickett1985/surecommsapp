@@ -1,0 +1,1 @@
+{"cmd":"configure","server":"utgnode2.surecloudvoice.com","username":"1000","password":"AE%.b!G27%","domain":"utgnode2.surecloudvoice.com","transport":"udp","displayName":"Test"}

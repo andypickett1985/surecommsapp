@@ -33,6 +33,7 @@ app.use('/api/conversations', require('./routes/conversations'));
 app.use('/api/speed-dials', require('./routes/speed-dials'));
 app.use('/api/contacts', require('./routes/fpbx-contacts'));
 app.use('/api/call-forward', require('./routes/call-forward'));
+app.use('/api/call-center', require('./routes/call-center'));
 app.use('/api/chat-upload', require('./routes/chat-upload'));
 app.use('/chat-uploads', express.static(require('path').join(__dirname, '..', 'chat-uploads')));
 app.use('/api/transcriptions', require('./routes/transcriptions'));

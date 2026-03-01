@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useStore, setState } from '../lib/store';
 import * as ipc from '../lib/ipc';
 import Avatar from '../components/Avatar';
 
 export default function DetailPanel() {
-  const { selectedItem, selectedType, messages, user, conversations, users, regStatus } = useStore();
+  const { selectedItem, selectedType, messages, user, conversations, users, regStatus, section, ccSelectedQueue } = useStore();
 
+  if (section === 'callcenter' && ccSelectedQueue) return <QueueLiveWallboard />;
   if (selectedType === 'user' && selectedItem) return <UserDetail />;
   if (selectedType === 'chat' && selectedItem) return <ChatThread />;
 
@@ -57,7 +58,7 @@ function DefaultPanel() {
     <div className="flex flex-col h-full">
       {/* Title bar area */}
       <div className="h-11 border-b border-gray-200 flex items-center justify-between px-4 shrink-0 bg-white" style={{ WebkitAppRegion: 'drag' }}>
-        <span className="text-xs font-semibold text-navy">SureCloudVoice</span>
+        <span className="text-xs font-semibold text-navy">Hypercloud</span>
         <div className="flex items-center gap-1" style={{ WebkitAppRegion: 'no-drag' }}>
           {ccEnabled && (
             <div className="flex items-center gap-1.5 mr-3 px-2 py-1 rounded-md bg-gray-50 border border-gray-200">
@@ -86,7 +87,7 @@ function DefaultPanel() {
       </div>
 
       <div className="flex-1 flex flex-col items-center justify-center text-gray-300 gap-2 bg-gray-50/50" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'40\' height=\'40\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Ccircle cx=\'20\' cy=\'20\' r=\'15\' fill=\'none\' stroke=\'%23e5e7eb\' stroke-width=\'0.4\'/%3E%3C/svg%3E")', backgroundSize: '40px 40px' }}>
-        <svg width="48" height="48" viewBox="0 0 48 48" fill="none" opacity="0.2"><path d="M14 18C14 16.9 14.9 16 16 16H20L23 20H16V32H32V25L36 28V32C36 33.1 35.1 34 34 34H14C12.9 34 12 33.1 12 32V20C12 18.9 12.9 18 14 18Z" fill="#4C00FF"/><circle cx="30" cy="20" r="6" fill="#CE0037" opacity="0.9"/></svg>
+        <svg width="48" height="48" viewBox="0 0 48 48" fill="none" opacity="0.2"><path d="M14 18C14 16.9 14.9 16 16 16H20L23 20H16V32H32V25L36 28V32C36 33.1 35.1 34 34 34H14C12.9 34 12 33.1 12 32V20C12 18.9 12.9 18 14 18Z" fill="#6db4d6"/><circle cx="30" cy="20" r="6" fill="#6db4d6" opacity="0.9"/></svg>
         <p className="text-sm">Select a user or conversation</p>
       </div>
 
@@ -245,7 +246,7 @@ function ChatThread() {
     // Check for image attachment: [Image: name](url)
     const imgMatch = body.match(/^\[Image: (.+?)\]\((.+?)\)$/);
     if (imgMatch) {
-      const fullUrl = `https://communicator.surecloudvoice.com${imgMatch[2]}`;
+      const fullUrl = `https://appmanager.hyperclouduk.com${imgMatch[2]}`;
       return (
         <div>
           <img src={fullUrl} alt={imgMatch[1]} className="max-w-48 max-h-48 rounded-lg cursor-pointer" onClick={() => window.open(fullUrl, '_blank')} />
@@ -256,7 +257,7 @@ function ChatThread() {
     // Check for file attachment: [File: name](url)
     const fileMatch = body.match(/^\[File: (.+?)\]\((.+?)\)$/);
     if (fileMatch) {
-      const fullUrl = `https://communicator.surecloudvoice.com${fileMatch[2]}`;
+      const fullUrl = `https://appmanager.hyperclouduk.com${fileMatch[2]}`;
       return (
         <a href={fullUrl} target="_blank" rel="noopener" className="flex items-center gap-2 px-3 py-2 bg-white/10 rounded-lg hover:bg-white/20 transition-colors no-underline">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -338,6 +339,195 @@ function ChatThread() {
           <button type="submit" disabled={!input.trim() && !uploading} className="p-1.5 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 text-white rounded-md"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
         </form>
       </div>
+    </div>
+  );
+}
+
+function QueueLiveWallboard() {
+  const { ccSelectedQueue, regStatus, callCenter } = useStore();
+  const [liveData, setLiveData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [ccSaving, setCcSaving] = useState(false);
+
+  const qId = ccSelectedQueue?.call_center_queue_uuid;
+  const queueName = ccSelectedQueue?.queue_name || 'Queue';
+  const queueExt = ccSelectedQueue?.queue_extension || '';
+
+  const ccEnabled = !!callCenter?.enabled && !!callCenter?.linked;
+  const currentStatus = callCenter?.agent?.agent_status || '';
+  const statusOptions = useMemo(() => {
+    const list = Array.isArray(callCenter?.statuses) ? [...callCenter.statuses] : [];
+    if (currentStatus && !list.includes(currentStatus)) list.unshift(currentStatus);
+    return list;
+  }, [callCenter?.statuses, currentStatus]);
+
+  const statusColor = currentStatus === 'Available' || currentStatus === 'Available (On Demand)' ? 'bg-green-500' :
+    currentStatus === 'On Break' ? 'bg-yellow-400' :
+    currentStatus === 'Logged Out' ? 'bg-gray-300' : 'bg-blue-400';
+
+  async function onCcStatusChange(nextStatus) {
+    if (!nextStatus) return;
+    setCcSaving(true);
+    try {
+      await ipc.setCallCenterStatus(nextStatus);
+      const mapped = nextStatus === 'Available' || nextStatus === 'Available (On Demand)' ? 'online' :
+        nextStatus === 'On Break' ? 'away' : nextStatus === 'Logged Out' ? 'offline' : 'busy';
+      ipc.updatePresence(mapped).catch(() => {});
+      setState(prev => ({
+        callCenter: { ...prev.callCenter, agent: prev.callCenter?.agent ? { ...prev.callCenter.agent, agent_status: nextStatus } : prev.callCenter.agent },
+      }));
+    } catch (err) { alert(err.message || 'Failed'); }
+    setCcSaving(false);
+  }
+
+  const loadLive = useCallback(async () => {
+    if (!qId) return;
+    try {
+      const data = await ipc.fetchCallCenterQueueLive(qId);
+      setLiveData(data);
+    } catch { setLiveData(null); }
+    setLoading(false);
+  }, [qId]);
+
+  useEffect(() => {
+    setLoading(true);
+    loadLive();
+    const iv = setInterval(loadLive, 5000);
+    return () => clearInterval(iv);
+  }, [loadLive]);
+
+  const stateColor = (s) => {
+    if (s === 'Waiting') return 'text-green-600 bg-green-50 border-green-200';
+    if (s === 'Receiving') return 'text-orange-600 bg-orange-50 border-orange-200';
+    if (s === 'In a bridge call') return 'text-red-600 bg-red-50 border-red-200';
+    return 'text-gray-500 bg-gray-50 border-gray-200';
+  };
+
+  const statusDotColor = (s) => {
+    if (s === 'Available') return 'bg-green-500';
+    if (s === 'On Break') return 'bg-yellow-400';
+    if (s === 'Logged Out') return 'bg-gray-300';
+    return 'bg-blue-400';
+  };
+
+  const agentCount = liveData?.agents?.length || 0;
+  const waitingCount = liveData?.waitingCount || 0;
+  const availableCount = liveData?.agents?.filter(a => a.status === 'Available').length || 0;
+  const onCallCount = liveData?.agents?.filter(a => a.state === 'In a bridge call').length || 0;
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="h-11 border-b border-gray-200 flex items-center justify-between px-4 shrink-0 bg-white" style={{ WebkitAppRegion: 'drag' }}>
+        <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="text-blue-600">
+            <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>
+          </svg>
+          <span className="text-sm font-semibold text-gray-900">{queueName}</span>
+          <span className="text-[11px] text-gray-400">Ext {queueExt}</span>
+        </div>
+        <div className="flex items-center gap-1" style={{ WebkitAppRegion: 'no-drag' }}>
+          {ccEnabled && (
+            <div className="flex items-center gap-1.5 mr-3 px-2 py-1 rounded-md bg-gray-50 border border-gray-200">
+              <div className={`w-2 h-2 rounded-full ${statusColor}`} />
+              <select value={currentStatus} disabled={ccSaving} onChange={(e) => onCcStatusChange(e.target.value)}
+                className="text-[11px] bg-transparent outline-none text-gray-700 cursor-pointer pr-1"
+                title={callCenter?.agent?.agent_name ? `Agent: ${callCenter.agent.agent_name}` : 'Call center status'}>
+                {statusOptions.map((s) => (<option key={s} value={s}>{s}</option>))}
+              </select>
+            </div>
+          )}
+          <div className="flex items-center gap-1.5 mr-2">
+            <div className={`w-2 h-2 rounded-full ${regStatus.code === 200 ? 'bg-green-500' : regStatus.code === 0 ? 'bg-yellow-400 animate-pulse' : 'bg-gray-300'}`} />
+            <span className="text-[11px] text-gray-500">{regStatus.code === 200 ? 'Connected' : 'Offline'}</span>
+          </div>
+          <button onClick={ipc.windowMinimize} className="p-1 text-gray-400 hover:text-gray-600"><svg width="12" height="12" viewBox="0 0 12 12"><rect y="5" width="12" height="1.5" fill="currentColor"/></svg></button>
+          <button onClick={ipc.windowMaximize} className="p-1 text-gray-400 hover:text-gray-600"><svg width="12" height="12" viewBox="0 0 12 12"><rect x="1" y="1" width="10" height="10" stroke="currentColor" strokeWidth="1.5" fill="none"/></svg></button>
+          <button onClick={ipc.windowClose} className="p-1 text-gray-400 hover:text-red-500"><svg width="12" height="12" viewBox="0 0 12 12"><line x1="2" y1="2" x2="10" y2="10" stroke="currentColor" strokeWidth="1.5"/><line x1="10" y1="2" x2="2" y2="10" stroke="currentColor" strokeWidth="1.5"/></svg></button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex-1 flex items-center justify-center text-gray-400">Loading live data...</div>
+      ) : (
+        <div className="flex-1 overflow-y-auto p-5 space-y-5 bg-gray-50/50">
+          {/* Stats cards */}
+          <div className="grid grid-cols-4 gap-3">
+            <div className="bg-white border border-gray-200 rounded-xl p-4 text-center shadow-sm">
+              <div className="text-2xl font-bold text-blue-600">{agentCount}</div>
+              <div className="text-[10px] text-gray-400 uppercase tracking-wider mt-1">Total Agents</div>
+            </div>
+            <div className="bg-white border border-green-200 rounded-xl p-4 text-center shadow-sm">
+              <div className="text-2xl font-bold text-green-600">{availableCount}</div>
+              <div className="text-[10px] text-green-500 uppercase tracking-wider mt-1">Available</div>
+            </div>
+            <div className="bg-white border border-red-200 rounded-xl p-4 text-center shadow-sm">
+              <div className="text-2xl font-bold text-red-600">{onCallCount}</div>
+              <div className="text-[10px] text-red-400 uppercase tracking-wider mt-1">On Call</div>
+            </div>
+            <div className="bg-white border border-amber-200 rounded-xl p-4 text-center shadow-sm">
+              <div className="text-2xl font-bold text-amber-600">{waitingCount}</div>
+              <div className="text-[10px] text-amber-500 uppercase tracking-wider mt-1">Callers Waiting</div>
+            </div>
+          </div>
+
+          {/* Agents grid */}
+          {liveData?.agents?.length > 0 && (
+            <div>
+              <h3 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-3">Live Agents</h3>
+              <div className="grid grid-cols-2 gap-2">
+                {liveData.agents.map((a, i) => (
+                  <div key={i} className={`flex items-center gap-3 px-4 py-3 rounded-xl border bg-white shadow-sm ${
+                    a.state === 'In a bridge call' ? 'border-red-200' : a.state === 'Receiving' ? 'border-orange-200' : 'border-gray-200'
+                  }`}>
+                    <div className={`w-3 h-3 rounded-full shrink-0 ${statusDotColor(a.status)}`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-gray-900 truncate">{a.display_name || a.name || '?'}</div>
+                      <div className="text-[11px] text-gray-400">{a.agent_id ? `Ext ${a.agent_id} · ` : ''}{a.status || '?'}</div>
+                    </div>
+                    <span className={`text-[10px] font-semibold px-2 py-1 rounded-md border ${stateColor(a.state)}`}>
+                      {a.state === 'In a bridge call' ? 'On Call' : a.state || 'Idle'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Callers waiting */}
+          {liveData?.members?.length > 0 && (
+            <div>
+              <h3 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-3">Callers Waiting in Queue</h3>
+              <div className="space-y-2">
+                {liveData.members.map((m, i) => (
+                  <div key={i} className="flex items-center gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl">
+                    <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-amber-600"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3"/></svg>
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-sm font-medium text-gray-800">{m.cid_number || m.cid_name || 'Unknown Caller'}</div>
+                      <div className="text-[11px] text-amber-600">{m.state || 'Waiting'}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {(!liveData?.agents?.length && !liveData?.members?.length) && (
+            <div className="flex flex-col items-center justify-center py-16 text-gray-300 gap-3">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" opacity="0.4"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+              <p className="text-sm">No live activity in this queue</p>
+              <p className="text-[11px]">Agents and callers will appear here in real time</p>
+            </div>
+          )}
+
+          <div className="text-center">
+            <button onClick={loadLive} className="text-[11px] text-blue-500 hover:text-blue-700">
+              Auto-refreshing every 5s &middot; Click to refresh now
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

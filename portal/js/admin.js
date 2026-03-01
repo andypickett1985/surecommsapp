@@ -358,7 +358,7 @@ function renderOverviewTab(container, org, orgId) {
   container.appendChild(h('div', { style:'display:flex;align-items:center;justify-content:space-between;margin-bottom:16px' },
     h('h2', { style:'font-size:16px' }, `Users (${users.length})`),
     h('div', { style:'display:flex;gap:8px' },
-      h('button', { className:'btn btn-ghost btn-sm', onClick:()=>showEditUserModal(null, orgId) }, '+ Add User'),
+      h('button', { className:'btn btn-ghost btn-sm', onClick:()=>showEditUserModal(null, orgId, org) }, '+ Add User'),
       h('div', { className:'view-toggles' },
         h('button', { className:'active', innerHTML:'&#9638;&#9638;' }),
         h('button', { innerHTML:'&#9776;' })))));
@@ -373,7 +373,7 @@ function renderOverviewTab(container, org, orgId) {
 
     const appOnline = pres === 'online' || pres === 'away';
     grid.appendChild(h('div', { className:'user-card' },
-      h('button', { className:'kebab', onClick:(e)=>showUserMenu(e, u, orgId) }, '\u22EE'),
+      h('button', { className:'kebab', onClick:(e)=>showUserMenu(e, u, orgId, org) }, '\u22EE'),
       h('div', { className:'name' }, name),
       h('div', { className:'ext' }, ext),
       appOnline ? h('div', { style:'margin-top:8px;margin-bottom:4px' },
@@ -388,7 +388,7 @@ function renderOverviewTab(container, org, orgId) {
   if (users.length === 0) container.appendChild(h('div', { className:'empty' }, h('p', {}, 'No users yet. Add your first user.')));
 }
 
-function showEditUserModal(user, orgId) {
+function showEditUserModal(user, orgId, org) {
   const ov = h('div', { className:'modal-overlay', onClick: e=>{if(e.target===ov)ov.remove();} });
   const nameIn = h('input', { type:'text', value:user?.display_name||'', placeholder:'Display name' });
   const emailIn = h('input', { type:'email', value:user?.email||'', placeholder:'user@company.com' });
@@ -397,6 +397,46 @@ function showEditUserModal(user, orgId) {
   const sipUserIn = h('input', { type:'text', value:user?.sip_username||'', placeholder:'1001' });
   const sipPassIn = h('input', { type:'password', value:user?.sip_password||'' });
   const authIn = h('input', { type:'text', value:user?.auth_id||'', placeholder:'1001' });
+  const ccEnabled = h('input', { type: 'checkbox' });
+  const ccMode = h('select', {},
+    h('option', { value: 'auto' }, 'Auto detect from extension'),
+    h('option', { value: 'manual' }, 'Manual agent select')
+  );
+  const ccAgent = h('select', {}, h('option', { value: '' }, 'Loading agents...'));
+  const ccHelp = h('div', { className:'hint' }, 'Maps this app user to a FusionPBX call-center agent.');
+
+  const hasFpbxDomain = !!org?.fpbx_domain_uuid;
+  if (!hasFpbxDomain) {
+    ccEnabled.disabled = true;
+    ccMode.disabled = true;
+    ccAgent.disabled = true;
+    ccHelp.textContent = 'Call center mode requires this organization to be linked to FusionPBX first.';
+  } else {
+    api(`/api/admin/fpbx/call-center/agents?domain_uuid=${encodeURIComponent(org.fpbx_domain_uuid)}`)
+      .then((agents) => {
+        ccAgent.innerHTML = '';
+        ccAgent.appendChild(h('option', { value: '' }, 'Select call-center agent'));
+        agents.forEach((a) => {
+          const label = `${a.agent_id || '?'} - ${a.agent_name || 'Unnamed'} (${a.agent_status || 'Unknown'})`;
+          ccAgent.appendChild(h('option', { value: a.call_center_agent_uuid }, label));
+        });
+      })
+      .catch(() => {
+        ccAgent.innerHTML = '';
+        ccAgent.appendChild(h('option', { value: '' }, 'Failed to load agents'));
+      });
+  }
+
+  if (user?.id) {
+    api(`/api/admin/fpbx/call-center/user-link/${user.id}`)
+      .then((link) => {
+        ccEnabled.checked = !!link.enabled;
+        ccMode.value = link.mode === 'manual' ? 'manual' : 'auto';
+        const selected = link.linkedAgent?.call_center_agent_uuid || '';
+        if (selected) ccAgent.value = selected;
+      })
+      .catch(() => {});
+  }
 
   ov.appendChild(h('div', { className:'modal' },
     h('div', { className:'modal-header' },
@@ -412,6 +452,21 @@ function showEditUserModal(user, orgId) {
       h('div', { className:'form-row' },
         h('div', { className:'form-group' }, h('label', {}, 'SIP username'), sipUserIn, h('div', { className:'hint' }, "If different from the PBX extension.")),
         h('div', { className:'form-group' }, h('label', {}, 'Authorization name'), authIn, h('div', { className:'hint' }, "If different from SIP username."))),
+      h('div', { className:'form-row' },
+        h('div', { className:'form-group' },
+          h('label', { style:'display:flex;align-items:center;gap:8px' },
+            ccEnabled,
+            h('span', {}, 'Enable call center mode')
+          ),
+          ccHelp),
+        h('div', { className:'form-group' },
+          h('label', {}, 'Call center mapping mode'),
+          ccMode,
+          h('div', { className:'hint' }, 'Auto maps by extension; manual lets you pick a specific agent.'))),
+      h('div', { className:'form-group' },
+        h('label', {}, 'Call center agent'),
+        ccAgent,
+        h('div', { className:'hint' }, 'Required in manual mode.')),
       !user ? h('div', { className:'form-group' }, h('label', {}, 'Password'), passIn) : null,
       h('a', { style:'color:var(--blue);font-size:13px;cursor:pointer' }, 'Show more fields')),
     h('div', { className:'modal-footer' },
@@ -428,10 +483,30 @@ function showEditUserModal(user, orgId) {
             const body = { display_name:nameIn.value, email:emailIn.value, ...sipFields };
             if(passIn.value) body.password = passIn.value;
             await api(`/api/admin/users/${user.id}`, { method:'PUT', body:JSON.stringify(body) });
+            if (hasFpbxDomain) {
+              await api(`/api/admin/fpbx/call-center/user-link/${user.id}`, {
+                method: 'PUT',
+                body: JSON.stringify({
+                  enabled: !!ccEnabled.checked,
+                  mode: ccMode.value,
+                  call_center_agent_uuid: ccAgent.value || null,
+                })
+              });
+            }
           } else {
             if(!passIn.value||!emailIn.value) { toast('Email and password required','error'); return; }
-            await api('/api/admin/users', { method:'POST', body:JSON.stringify({
+            const created = await api('/api/admin/users', { method:'POST', body:JSON.stringify({
               email:emailIn.value, password:passIn.value, display_name:nameIn.value, tenant_id:orgId, ...sipFields }) });
+            if (hasFpbxDomain && created?.id) {
+              await api(`/api/admin/fpbx/call-center/user-link/${created.id}`, {
+                method: 'PUT',
+                body: JSON.stringify({
+                  enabled: !!ccEnabled.checked,
+                  mode: ccMode.value,
+                  call_center_agent_uuid: ccAgent.value || null,
+                })
+              });
+            }
           }
           ov.remove(); toast(user?'User updated':'User created'); render();
         } catch(e){toast(e.message,'error');} } }, 'Save'))));
@@ -439,13 +514,13 @@ function showEditUserModal(user, orgId) {
 }
 
 /* ============ USER CONTEXT MENU ============ */
-function showUserMenu(event, user, orgId) {
+function showUserMenu(event, user, orgId, org) {
   event.stopPropagation();
   document.querySelectorAll('.user-popup-menu').forEach(el => el.remove());
 
   const menu = h('div', { className: 'user-popup-menu', style: 'position:fixed;z-index:200;background:white;border:1px solid var(--g200);border-radius:8px;box-shadow:0 8px 30px rgba(0,0,0,0.12);min-width:180px;padding:4px;animation:fadeIn 0.15s' },
     h('button', { style: 'display:flex;align-items:center;gap:8px;width:100%;padding:8px 12px;border:none;background:none;cursor:pointer;font-size:13px;color:var(--g700);border-radius:6px;text-align:left;font-family:inherit', onMouseover: (e) => e.target.style.background='var(--g50)', onMouseout: (e) => e.target.style.background='none',
-      onClick: () => { menu.remove(); showEditUserModal(user, orgId); } }, 'Edit user'),
+      onClick: () => { menu.remove(); showEditUserModal(user, orgId, org); } }, 'Edit user'),
     h('button', { style: 'display:flex;align-items:center;gap:8px;width:100%;padding:8px 12px;border:none;background:none;cursor:pointer;font-size:13px;color:var(--g700);border-radius:6px;text-align:left;font-family:inherit', onMouseover: (e) => e.target.style.background='var(--g50)', onMouseout: (e) => e.target.style.background='none',
       onClick: () => { menu.remove(); showResetPasswordModal(user); } }, 'Reset password'),
     h('button', { style: 'display:flex;align-items:center;gap:8px;width:100%;padding:8px 12px;border:none;background:none;cursor:pointer;font-size:13px;color:var(--g700);border-radius:6px;text-align:left;font-family:inherit', onMouseover: (e) => e.target.style.background='var(--g50)', onMouseout: (e) => e.target.style.background='none',

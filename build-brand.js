@@ -23,13 +23,14 @@ copyDirSync(path.join(__dirname, 'app'), buildDir);
 // 2. Replace branding in all source files
 console.log('2. Applying branding...');
 const replacements = [
+  ['SureCloudVoice by Sure', brandJson.copyright],
+  ['by Sure', `by ${brandJson.companyName}`],
   ['communicator.surecloudvoice.com', brandJson.domain],
   ['wss://communicator.surecloudvoice.com', brandJson.wsUrl],
   ['https://communicator.surecloudvoice.com', brandJson.apiUrl],
   ['SureCloudVoice', brandJson.appName],
   ['SureCloudComms', brandJson.appName],
   ['surecloudvoice', brandId],
-  ['SureCloudVoice by Sure', brandJson.copyright],
   ['Sure by Beyon', brandJson.companyName],
 ];
 
@@ -76,10 +77,14 @@ function darken(hex) {
 
 // 4. Copy brand logos
 console.log('4. Copying brand assets...');
-const logoSrc = path.join(brandDir, 'img', 'logo-horizontal.png');
+const logoSrc = path.join(brandDir, brandJson.logos?.horizontal || 'img/logo-horizontal.png');
 if (fs.existsSync(logoSrc)) {
   fs.copyFileSync(logoSrc, path.join(buildDir, 'src', 'renderer', 'assets', 'sure-logo.png'));
   fs.copyFileSync(logoSrc, path.join(buildDir, 'src', 'renderer', 'assets', 'sure-icon.png'));
+}
+const loginLogoSrc = path.join(brandDir, brandJson.logos?.login || '');
+if (brandJson.logos?.login && fs.existsSync(loginLogoSrc)) {
+  fs.copyFileSync(loginLogoSrc, path.join(buildDir, 'src', 'renderer', 'assets', 'sure-logo.png'));
 }
 const icoSrc = path.join(brandDir, 'icon.ico');
 if (fs.existsSync(icoSrc)) {

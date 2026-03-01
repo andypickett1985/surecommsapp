@@ -18,6 +18,7 @@
 
   "logos": {
     "horizontal": "img/logo-horizontal.png",
+    "login": "img/ct-logo-light.png",
     "vertical": "img/logo-horizontal.png",
     "icon": "icon.png",
     "iconIco": "icon.ico"

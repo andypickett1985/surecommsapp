@@ -6,6 +6,8 @@ const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
 router.use(authenticateToken, requireAdmin);
 
+const CALL_CENTER_SETTING_KEYS = ['call_center_enabled', 'call_center_mode', 'call_center_agent_uuid', 'call_center_agent_id'];
+
 // Stats
 router.get('/stats', async (req, res) => {
   try {
@@ -72,6 +74,186 @@ router.get('/domains/:uuid/extensions', async (req, res) => {
 
     res.json(extensions);
   } catch (err) { console.error('FPBX extensions error:', err); res.status(500).json({ error: err.message }); }
+});
+
+// List call center agents (optionally by domain)
+router.get('/call-center/agents', async (req, res) => {
+  try {
+    const { domain_uuid } = req.query;
+    let result;
+    if (domain_uuid) {
+      result = await fpbx.query(
+        `SELECT call_center_agent_uuid, domain_uuid, agent_name, agent_id, agent_contact, agent_status
+         FROM v_call_center_agents
+         WHERE domain_uuid = $1
+         ORDER BY agent_id`,
+        [domain_uuid]
+      );
+    } else {
+      result = await fpbx.query(
+        `SELECT call_center_agent_uuid, domain_uuid, agent_name, agent_id, agent_contact, agent_status
+         FROM v_call_center_agents
+         ORDER BY domain_uuid, agent_id`
+      );
+    }
+    res.json(result.rows);
+  } catch (err) {
+    console.error('FPBX call center agents error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get call center link state for a specific app user
+router.get('/call-center/user-link/:userId', async (req, res) => {
+  try {
+    const userResult = await db.query(
+      `SELECT u.id, u.email, u.display_name, u.tenant_id, t.fpbx_domain_uuid, s.sip_username
+       FROM users u
+       JOIN tenants t ON t.id = u.tenant_id
+      LEFT JOIN LATERAL (
+        SELECT sip_username
+        FROM sip_accounts
+        WHERE user_id = u.id
+        ORDER BY created_at
+        LIMIT 1
+      ) s ON true
+       WHERE u.id = $1`,
+      [req.params.userId]
+    );
+    if (userResult.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    const user = userResult.rows[0];
+
+    const settingsResult = await db.query(
+      `SELECT setting_key, setting_value FROM user_settings
+       WHERE user_id = $1 AND setting_key = ANY($2::text[])`,
+      [req.params.userId, CALL_CENTER_SETTING_KEYS]
+    );
+    const settings = {};
+    settingsResult.rows.forEach(r => { settings[r.setting_key] = r.setting_value; });
+
+    let linkedAgent = null;
+    if (settings.call_center_agent_uuid) {
+      const agentResult = await fpbx.query(
+        `SELECT call_center_agent_uuid, domain_uuid, agent_name, agent_id, agent_contact, agent_status
+         FROM v_call_center_agents
+         WHERE call_center_agent_uuid = $1`,
+        [settings.call_center_agent_uuid]
+      );
+      linkedAgent = agentResult.rows[0] || null;
+    }
+
+    let autoDetectedAgent = null;
+    if (user.fpbx_domain_uuid && user.sip_username) {
+      const autoResult = await fpbx.query(
+        `SELECT call_center_agent_uuid, domain_uuid, agent_name, agent_id, agent_contact, agent_status
+         FROM v_call_center_agents
+         WHERE domain_uuid = $1 AND agent_id = $2
+         LIMIT 1`,
+        [user.fpbx_domain_uuid, String(user.sip_username)]
+      );
+      autoDetectedAgent = autoResult.rows[0] || null;
+    }
+
+    res.json({
+      enabled: settings.call_center_enabled === 'true',
+      mode: settings.call_center_mode || 'auto',
+      linkedAgent,
+      autoDetectedAgent,
+      sip_username: user.sip_username || '',
+      fpbx_domain_uuid: user.fpbx_domain_uuid || null,
+    });
+  } catch (err) {
+    console.error('FPBX call center user-link error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Link/unlink app user to a FusionPBX call center agent
+router.put('/call-center/user-link/:userId', async (req, res) => {
+  try {
+    const { enabled, mode, call_center_agent_uuid } = req.body;
+    const userId = req.params.userId;
+
+    const userResult = await db.query(
+      `SELECT u.id, u.tenant_id, s.sip_username, t.fpbx_domain_uuid
+       FROM users u
+       JOIN tenants t ON t.id = u.tenant_id
+      LEFT JOIN LATERAL (
+        SELECT sip_username
+        FROM sip_accounts
+        WHERE user_id = u.id
+        ORDER BY created_at
+        LIMIT 1
+      ) s ON true
+       WHERE u.id = $1`,
+      [userId]
+    );
+    if (userResult.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    const user = userResult.rows[0];
+
+    if (!enabled) {
+      await db.query(
+        `DELETE FROM user_settings
+         WHERE user_id = $1 AND setting_key = ANY($2::text[])`,
+        [userId, CALL_CENTER_SETTING_KEYS]
+      );
+      return res.json({ success: true, enabled: false });
+    }
+
+    let agent = null;
+    const selectedMode = mode === 'manual' ? 'manual' : 'auto';
+    if (selectedMode === 'manual') {
+      if (!call_center_agent_uuid) return res.status(400).json({ error: 'call_center_agent_uuid required in manual mode' });
+      const agentResult = await fpbx.query(
+        `SELECT call_center_agent_uuid, agent_id, agent_name, domain_uuid
+         FROM v_call_center_agents
+         WHERE call_center_agent_uuid = $1`,
+        [call_center_agent_uuid]
+      );
+      if (agentResult.rows.length === 0) return res.status(404).json({ error: 'Call center agent not found' });
+      agent = agentResult.rows[0];
+    } else {
+      if (!user.fpbx_domain_uuid || !user.sip_username) {
+        return res.status(400).json({ error: 'Auto mode requires linked FusionPBX domain and SIP username' });
+      }
+      const autoResult = await fpbx.query(
+        `SELECT call_center_agent_uuid, agent_id, agent_name, domain_uuid
+         FROM v_call_center_agents
+         WHERE domain_uuid = $1 AND agent_id = $2
+         LIMIT 1`,
+        [user.fpbx_domain_uuid, String(user.sip_username)]
+      );
+      if (autoResult.rows.length === 0) {
+        return res.status(404).json({ error: `No call center agent found for extension ${user.sip_username}` });
+      }
+      agent = autoResult.rows[0];
+    }
+
+    const kv = [
+      ['call_center_enabled', 'true'],
+      ['call_center_mode', selectedMode],
+      ['call_center_agent_uuid', agent.call_center_agent_uuid],
+      ['call_center_agent_id', agent.agent_id || ''],
+    ];
+    for (const [key, value] of kv) {
+      await db.query(
+        `INSERT INTO user_settings (user_id, setting_key, setting_value)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (user_id, setting_key) DO UPDATE SET setting_value = $3`,
+        [userId, key, String(value)]
+      );
+    }
+
+    res.json({
+      success: true,
+      enabled: true,
+      mode: selectedMode,
+      linkedAgent: agent,
+    });
+  } catch (err) {
+    console.error('FPBX call center user-link update error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Import a FusionPBX domain as a SureCloudVoice organization

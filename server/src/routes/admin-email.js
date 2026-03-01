@@ -13,6 +13,13 @@ function generatePassword() {
   return pw;
 }
 
+function getLoginUrl(req) {
+  const host = req.get('host');
+  const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
+  if (!host) return 'https://appmanager.hyperclouduk.com/download';
+  return `${proto}://${host}/download`;
+}
+
 // Reset password and email the user
 router.post('/reset-password', async (req, res) => {
   try {
@@ -28,10 +35,17 @@ router.post('/reset-password', async (req, res) => {
     const newPassword = generatePassword();
     const hash = await bcrypt.hash(newPassword, 12);
 
-    await db.query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [hash, user_id]);
+    if (custom_email && custom_email.trim()) {
+      await db.query(
+        'UPDATE users SET email = $1, password_hash = $2, updated_at = NOW() WHERE id = $3',
+        [custom_email.trim().toLowerCase(), hash, user_id]
+      );
+    } else {
+      await db.query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [hash, user_id]);
+    }
 
     const sendTo = custom_email || user.email;
-    const loginUrl = 'https://communicator.surecloudvoice.com/download';
+    const loginUrl = getLoginUrl(req);
 
     await passwordResetEmail(sendTo, user.display_name, newPassword, loginUrl);
 
@@ -57,11 +71,19 @@ router.post('/invite', async (req, res) => {
     const newPassword = generatePassword();
     const hash = await bcrypt.hash(newPassword, 12);
 
-    await db.query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [hash, user_id]);
+    if (custom_email && custom_email.trim()) {
+      await db.query(
+        'UPDATE users SET email = $1, password_hash = $2, updated_at = NOW() WHERE id = $3',
+        [custom_email.trim().toLowerCase(), hash, user_id]
+      );
+    } else {
+      await db.query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [hash, user_id]);
+    }
 
     const sendTo = custom_email || user.email;
+    const loginUrl = getLoginUrl(req);
 
-    await inviteEmail(sendTo, user.display_name, newPassword, 'https://communicator.surecloudvoice.com/download', user.org_name);
+    await inviteEmail(sendTo, user.display_name, newPassword, loginUrl, user.org_name);
 
     res.json({ success: true, sent_to: sendTo, message: `Invite email sent to ${sendTo}` });
   } catch (err) {

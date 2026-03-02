@@ -78,6 +78,8 @@ export const fetchCallCenterAvailableAgents = (qId) => apiFetch(`/api/call-cente
 export const addCallCenterQueueAgent = (qId, agentUuid, level, pos) => apiFetch(`/api/call-center/queues/${qId}/agents`, { method: 'POST', body: JSON.stringify({ call_center_agent_uuid: agentUuid, tier_level: level || 0, tier_position: pos || 0 }) });
 export const removeCallCenterQueueAgent = (qId, agentUuid) => apiFetch(`/api/call-center/queues/${qId}/agents/${agentUuid}`, { method: 'DELETE' });
 export const getProfile = () => apiFetch('/api/profile/me');
+export const sendSms = (to, message) => apiFetch('/api/sms/send', { method: 'POST', body: JSON.stringify({ to, message }) });
+export const getSmsHistory = (phone) => apiFetch(`/api/sms/history${phone ? '?phone=' + encodeURIComponent(phone) : ''}`);
 export async function uploadAvatar(file) {
   const t = _getState().token;
   const res = await fetch(PROV + '/api/profile/avatar', {

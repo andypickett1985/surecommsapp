@@ -189,6 +189,8 @@ function ChatThread() {
   const { selectedItem, messages, user, conversations } = useStore();
   const [input, setInput] = useState('');
   const [tab, setTab] = useState('message');
+  const [smsMode, setSmsMode] = useState(false);
+  const [smsSending, setSmsSending] = useState(false);
   const [uploading, setUploading] = useState(false);
   const scrollRef = useRef(null);
   const fileRef = useRef(null);
@@ -198,6 +200,8 @@ function ChatThread() {
   const participants = conv?.participants || [];
   const others = participants.filter(p => p.id !== user?.id);
   const title = conv?.title || others.map(p => p.display_name || p.email).join(', ') || 'Chat';
+  const otherUser = users.find(u => others.some(p => p.id === u.id));
+  const otherPhone = otherUser?.extension || otherUser?.sip_username || '';
 
   useEffect(() => {
     if (selectedItem) {
@@ -215,6 +219,17 @@ function ChatThread() {
   async function handleSend(e) {
     e.preventDefault();
     if (!input.trim()) return;
+    if (smsMode && otherPhone) {
+      setSmsSending(true);
+      try {
+        await ipc.sendSms(otherPhone, input.trim());
+        const smsMsg = { id: Date.now(), body: `[SMS] ${input.trim()}`, sender_id: user?.id, created_at: new Date().toISOString() };
+        setState(prev => ({ messages: { ...prev.messages, [selectedItem]: [...(prev.messages[selectedItem] || []), smsMsg] } }));
+        setInput('');
+      } catch (err) { alert('SMS failed: ' + (err.message || 'Unknown error')); }
+      setSmsSending(false);
+      return;
+    }
     try {
       const msg = await ipc.sendMessage(selectedItem, input.trim());
       setState(prev => ({ messages: { ...prev.messages, [selectedItem]: [...(prev.messages[selectedItem] || []), msg] } }));
@@ -325,7 +340,10 @@ function ChatThread() {
         </div>
         <form onSubmit={handleSend} className="flex items-center gap-2">
           <div className="flex-1 flex items-center border border-gray-200 rounded-lg px-3 py-2 focus-within:border-blue-400">
-            <span className="text-[10px] text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded font-medium mr-2 shrink-0">sms</span>
+            <button type="button" onClick={() => setSmsMode(!smsMode)} title={smsMode ? 'Switch to chat message' : 'Switch to SMS'}
+              className={`text-[10px] px-1.5 py-0.5 rounded font-medium mr-2 shrink-0 transition-colors ${smsMode ? 'text-white bg-green-500' : 'text-blue-500 bg-blue-50 hover:bg-blue-100'}`}>
+              {smsMode ? 'SMS' : 'msg'}
+            </button>
             <input type="text" value={input} onChange={e => setInput(e.target.value)} placeholder="Type something" className="flex-1 text-sm outline-none bg-transparent text-gray-900 placeholder:text-gray-400" />
           </div>
           <input type="file" ref={fileRef} className="hidden" onChange={handleFileUpload} accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.zip" />

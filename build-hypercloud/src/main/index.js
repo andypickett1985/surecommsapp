@@ -187,6 +187,36 @@ function setupIPC() {
       console.log('[AUDIO] Capture state:', data.enabled);
     } else {
       mainWindow?.webContents.send('sip:event', data);
+
+      if (data.event === 'incomingCall') {
+        if (mainWindow) {
+          if (!mainWindow.isVisible()) mainWindow.show();
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.focus();
+          mainWindow.flashFrame(true);
+          mainWindow.setAlwaysOnTop(true);
+          setTimeout(() => mainWindow?.setAlwaysOnTop(false), 3000);
+        }
+
+        const { Notification } = require('electron');
+        if (Notification.isSupported()) {
+          const callerName = data.name || data.number || 'Unknown';
+          const notif = new Notification({
+            title: 'Incoming Call',
+            body: callerName,
+            icon: path.join(__dirname, '../../assets/icon.ico'),
+            urgency: 'critical',
+            silent: true,
+          });
+          notif.on('click', () => {
+            if (mainWindow) {
+              mainWindow.show();
+              mainWindow.focus();
+            }
+          });
+          notif.show();
+        }
+      }
     }
   });
 

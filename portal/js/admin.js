@@ -690,11 +690,42 @@ function renderFeaturesTab(container, org, orgId) {
     toggle('save_transcriptions', 'Save call transcriptions', 'Automatically save transcriptions to the server for later review.')));
 
   // SMS Settings
+  const smsApiKeyIn = h('input', { type:'password', value:settings.sms_api_key||'', placeholder:'Webex Interact API key', style:'width:100%;padding:8px 12px;border:1px solid var(--g300);border-radius:6px;font-size:13px;font-family:monospace' });
+  const smsSenderIn = h('input', { type:'text', value:settings.sms_sender_id||'', placeholder:'e.g. HyperCloud or +447...', style:'width:100%;padding:8px 12px;border:1px solid var(--g300);border-radius:6px;font-size:13px' });
+  const smsCountryIn = h('select', { style:'padding:8px 12px;border:1px solid var(--g300);border-radius:6px;font-size:13px' },
+    ...['GB','US','IE','JE','GG','IM'].map(c => { const o = h('option', { value:c }, c); if((settings.sms_country_code||'GB')===c) o.selected=true; return o; }));
+  const smsTestNumIn = h('input', { type:'text', placeholder:'+447...', style:'width:180px;padding:6px 10px;border:1px solid var(--g300);border-radius:6px;font-size:13px' });
+  const smsTestBtn = h('button', { className:'btn btn-sm btn-secondary', onClick: async()=>{
+    try {
+      const r = await api('/api/sms/test', { method:'POST', body:JSON.stringify({ to:smsTestNumIn.value }) });
+      toast(r.success ? 'SMS config validated' : 'Test failed: ' + JSON.stringify(r.response), r.success?'success':'error');
+    } catch(e) { toast(e.message, 'error'); }
+  }}, 'Test');
+  const smsSaveBtn = h('button', { className:'btn btn-sm btn-primary', onClick: async()=>{
+    try {
+      await api(`/api/admin/orgs/${orgId}/settings`, { method:'PUT', body:JSON.stringify({
+        sms_api_key: smsApiKeyIn.value,
+        sms_sender_id: smsSenderIn.value,
+        sms_country_code: smsCountryIn.value,
+      })});
+      toast('SMS settings saved');
+    } catch(e) { toast(e.message, 'error'); }
+  }}, 'Save SMS Settings');
+
   container.appendChild(h('div', { className:'feature-section' },
     h('h3', {}, 'SMS Settings'),
-    h('p', {}, 'Enable SMS functionality to allow users to send and receive SMS and MMS messages.'),
-    toggle('enable_sms', 'Enable SMS', 'After the change, logged in users will need to log in again.'),
-    toggle('sms_missed_notifications', 'Send missed SMS, voicemail and call notifications to email', 'When users are offline, send notifications to email about missed SMS, voicemail, or calls.'),
+    h('p', {}, 'Enable SMS functionality via Webex Interact. Configure your API key and sender ID below.'),
+    toggle('sms_enabled', 'Enable SMS', 'After the change, logged in users will need to log in again.'),
+    h('div', { style:'margin:12px 0;padding:16px;background:#F9FAFB;border-radius:8px;border:1px solid #E4E4E7' },
+      h('div', { style:'font-size:12px;font-weight:600;color:#374151;margin-bottom:12px' }, 'Webex Interact SMS Configuration'),
+      h('div', { className:'form-row' },
+        h('div', { className:'form-group' }, h('label', {}, 'API Key'), smsApiKeyIn, h('div', { className:'hint' }, 'Your Webex Interact production API token')),
+        h('div', { className:'form-group' }, h('label', {}, 'Sender ID'), smsSenderIn, h('div', { className:'hint' }, 'Sender name or long number registered in Webex Interact'))),
+      h('div', { className:'form-row' },
+        h('div', { className:'form-group' }, h('label', {}, 'Default country code'), smsCountryIn),
+        h('div', { className:'form-group' }, h('label', {}, 'Test number'), h('div', { style:'display:flex;gap:8px' }, smsTestNumIn, smsTestBtn))),
+      h('div', { style:'margin-top:12px' }, smsSaveBtn)),
+    toggle('sms_missed_notifications', 'Send missed SMS notifications to email', 'When users are offline, send notifications to email about missed SMS.'),
     toggle('sms_forward_sip', 'Send SMS to connected SIP endpoints', 'Forward incoming SMS to connected SIP endpoints if no softphone is registered.')));
 
   // Apps Features

@@ -127,6 +127,7 @@ function renderTopbar() {
       h('div', { style: 'width:1px;height:24px;background:var(--g200);margin:0 8px' }),
       h('span', { style: 'font-size:13px;font-weight:600;color:var(--navy);letter-spacing:-0.3px' }, 'Admin Portal')),
     h('div', { className: 'topbar-actions' },
+      h('button', { onClick: () => navigate('/admin-users'), style: 'padding:6px 12px;border-radius:6px;font-size:12px;color:var(--g600);border:1px solid var(--g200);background:white;cursor:pointer;font-weight:500;font-family:inherit;display:flex;align-items:center;gap:4px' }, '\u{1F464} Admin Users'),
       h('button', { onClick: () => navigate('/downloads'), style: 'padding:6px 12px;border-radius:6px;font-size:12px;color:var(--g600);border:1px solid var(--g200);background:white;cursor:pointer;font-weight:500;font-family:inherit;display:flex;align-items:center;gap:4px' }, '\u2B07 Downloads'),
       h('div', { style: 'display:flex;align-items:center;gap:8px;padding:4px 12px;background:var(--g50);border-radius:20px;border:1px solid var(--g200)' },
         h('div', { style: 'width:8px;height:8px;border-radius:50%;background:#10B981' }),
@@ -1032,6 +1033,132 @@ async function renderDownloads() {
   }
 }
 
+/* ============ ADMIN USERS PAGE ============ */
+async function renderAdminUsers() {
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+  app.appendChild(renderTopbar());
+
+  const page = h('div', { className:'page' });
+  app.appendChild(page);
+
+  page.appendChild(h('div', { style:'display:flex;justify-content:space-between;align-items:center;margin-bottom:24px' },
+    h('div', {},
+      h('h1', { style:'font-size:24px;font-weight:700;color:#18181B' }, 'Admin Users'),
+      h('p', { style:'color:#71717A;font-size:14px;margin-top:4px' }, 'Manage portal administrators and their access')),
+    h('div', { style:'display:flex;gap:8px' },
+      h('button', { className:'btn btn-secondary', onClick:()=>navigate('/') }, 'Back'),
+      h('button', { className:'btn btn-primary', onClick:()=>showAdminUserModal(null, loadAdmins) }, '+ Add Admin'))));
+
+  const list = h('div');
+  page.appendChild(list);
+
+  async function loadAdmins() {
+    list.innerHTML = '';
+    try {
+      const admins_list = await api('/api/admin/admins');
+      const orgs = await api('/api/admin/orgs').catch(() => []);
+
+      if (admins_list.length === 0) {
+        list.appendChild(h('p', { style:'color:var(--g400)' }, 'No admin users found.'));
+        return;
+      }
+
+      const table = h('table', { style:'width:100%;border-collapse:collapse;font-size:13px' },
+        h('thead', {}, h('tr', { style:'border-bottom:2px solid var(--g200)' },
+          h('th', { style:'text-align:left;padding:10px 12px;font-weight:600;color:var(--g600)' }, 'Name'),
+          h('th', { style:'text-align:left;padding:10px 12px;font-weight:600;color:var(--g600)' }, 'Email'),
+          h('th', { style:'text-align:left;padding:10px 12px;font-weight:600;color:var(--g600)' }, 'Role'),
+          h('th', { style:'text-align:left;padding:10px 12px;font-weight:600;color:var(--g600)' }, 'Organization'),
+          h('th', { style:'text-align:center;padding:10px 12px;font-weight:600;color:var(--g600)' }, 'Active'),
+          h('th', { style:'text-align:left;padding:10px 12px;font-weight:600;color:var(--g600)' }, 'Created'),
+          h('th', { style:'text-align:right;padding:10px 12px' }, 'Actions'))));
+
+      const tbody = h('tbody');
+      admins_list.forEach(a => {
+        const isSelf = a.id === admin?.id;
+        const roleStyle = a.role === 'superadmin' ? 'background:#DBEAFE;color:#1D4ED8' : 'background:#F3F4F6;color:#374151';
+        tbody.appendChild(h('tr', { style:'border-bottom:1px solid var(--g100)' + (isSelf ? ';background:#FEFCE8' : '') },
+          h('td', { style:'padding:10px 12px;font-weight:500' }, a.name + (isSelf ? ' (you)' : '')),
+          h('td', { style:'padding:10px 12px;color:var(--g600)' }, a.email),
+          h('td', { style:'padding:10px 12px' }, h('span', { style:'font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;' + roleStyle }, a.role.toUpperCase())),
+          h('td', { style:'padding:10px 12px;color:var(--g500)' }, a.tenant_name || 'All organizations'),
+          h('td', { style:'padding:10px 12px;text-align:center' },
+            h('label', { className:'toggle' },
+              h('input', { type:'checkbox', checked:a.active?'checked':undefined, disabled:isSelf?'disabled':undefined, onChange:async(e)=>{
+                try { await api(`/api/admin/admins/${a.id}`, { method:'PUT', body:JSON.stringify({ active:e.target.checked }) }); toast(e.target.checked?'Activated':'Deactivated'); }catch(er){toast(er.message,'error');}
+              }}), h('span', { className:'slider' }))),
+          h('td', { style:'padding:10px 12px;font-size:12px;color:var(--g400)' }, new Date(a.created_at).toLocaleDateString('en-GB')),
+          h('td', { style:'padding:10px 12px;text-align:right' },
+            h('div', { style:'display:flex;gap:4px;justify-content:flex-end' },
+              h('button', { className:'btn btn-sm btn-secondary', onClick:()=>showAdminUserModal(a, loadAdmins, orgs) }, 'Edit'),
+              !isSelf ? h('button', { className:'btn btn-sm btn-danger', onClick:async()=>{
+                if(!confirm(`Delete admin "${a.name}"?`)) return;
+                try { await api(`/api/admin/admins/${a.id}`, { method:'DELETE' }); toast('Admin deleted'); loadAdmins(); } catch(er){toast(er.message,'error');}
+              }}, 'Delete') : null))));
+      });
+      table.appendChild(tbody);
+      list.appendChild(table);
+    } catch(err) {
+      list.appendChild(h('p', { style:'color:#EF4444' }, 'Error: ' + err.message));
+    }
+  }
+  loadAdmins();
+}
+
+function showAdminUserModal(existing, onSaved, orgs) {
+  const ov = h('div', { className:'modal-overlay', onClick:e=>{if(e.target===ov)ov.remove();} });
+  const nameIn = h('input', { type:'text', value:existing?.name||'', placeholder:'Full name' });
+  const emailIn = h('input', { type:'email', value:existing?.email||'', placeholder:'admin@company.com' });
+  const passIn = h('input', { type:'password', placeholder:existing ? 'Leave blank to keep' : 'Password' });
+  const roleIn = h('select', {},
+    h('option', { value:'admin' }, 'Admin'),
+    h('option', { value:'superadmin' }, 'Super Admin'));
+  if (existing?.role) roleIn.value = existing.role;
+
+  const orgIn = h('select', {}, h('option', { value:'' }, 'All organizations (global)'));
+  if (orgs) {
+    orgs.forEach(o => {
+      const opt = h('option', { value:o.id }, o.name || o.domain);
+      if (existing?.tenant_id === o.id) opt.selected = true;
+      orgIn.appendChild(opt);
+    });
+  }
+
+  ov.appendChild(h('div', { className:'modal', style:'max-width:520px' },
+    h('div', { className:'modal-header' },
+      h('h2', {}, existing ? 'Edit Admin' : 'Add Admin'),
+      h('button', { className:'btn btn-ghost', onClick:()=>ov.remove() }, 'X')),
+    h('div', { className:'modal-body' },
+      h('div', { className:'form-row' },
+        h('div', { className:'form-group' }, h('label', {}, 'Name *'), nameIn),
+        h('div', { className:'form-group' }, h('label', {}, 'Email *'), emailIn)),
+      h('div', { className:'form-row' },
+        h('div', { className:'form-group' }, h('label', {}, 'Password' + (existing ? '' : ' *')), passIn),
+        h('div', { className:'form-group' }, h('label', {}, 'Role'), roleIn)),
+      h('div', { className:'form-group' }, h('label', {}, 'Organization scope'), orgIn,
+        h('div', { className:'hint' }, 'Superadmins can access all organizations. Regular admins see only their assigned organization.'))),
+    h('div', { className:'modal-footer' },
+      h('button', { className:'btn btn-secondary', onClick:()=>ov.remove() }, 'Cancel'),
+      h('button', { className:'btn btn-primary', onClick:async()=>{
+        if (!nameIn.value || !emailIn.value) { toast('Name and email required', 'error'); return; }
+        if (!existing && !passIn.value) { toast('Password required for new admin', 'error'); return; }
+        try {
+          const body = { name:nameIn.value, email:emailIn.value, role:roleIn.value, tenant_id:orgIn.value||null };
+          if (passIn.value) body.password = passIn.value;
+          if (existing) {
+            await api(`/api/admin/admins/${existing.id}`, { method:'PUT', body:JSON.stringify(body) });
+          } else {
+            await api('/api/admin/admins', { method:'POST', body:JSON.stringify(body) });
+          }
+          ov.remove();
+          toast(existing ? 'Admin updated' : 'Admin created');
+          if (onSaved) onSaved();
+        } catch(e) { toast(e.message, 'error'); }
+      }}, existing ? 'Save' : 'Create'))));
+  document.body.appendChild(ov);
+}
+
 /* ============ ROUTER ============ */
 async function render() {
   if (!token || !admin) { renderLogin(); return; }
@@ -1041,6 +1168,8 @@ async function render() {
     await renderOrgDetail(parts[1]);
   } else if (parts[0] === 'downloads') {
     await renderDownloads();
+  } else if (parts[0] === 'admin-users') {
+    await renderAdminUsers();
   } else {
     await renderOrgs();
   }

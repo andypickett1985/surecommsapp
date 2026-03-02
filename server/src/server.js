@@ -14,6 +14,7 @@ app.use(express.json({ limit: '10mb' }));
 
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/admin/auth', require('./routes/admin-auth'));
+app.use('/api/admin/admins', require('./routes/admin-admins'));
 app.use('/api/provision', require('./routes/provision'));
 app.use('/api/admin/tenants', require('./routes/admin-tenants'));
 app.use('/api/admin/orgs', require('./routes/admin-orgs'));

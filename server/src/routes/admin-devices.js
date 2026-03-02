@@ -66,6 +66,20 @@ router.post('/restart/:userId', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Push update notification to all users in an org
+router.post('/push-update/:orgId', async (req, res) => {
+  try {
+    const { version, downloadUrl, force } = req.body;
+    const count = sendCommandToTenant(req.params.orgId, {
+      event: 'updateAvailable',
+      version: version || '?',
+      downloadUrl: downloadUrl || '',
+      force: !!force,
+    });
+    res.json({ success: true, devices_notified: count });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // Get online status summary
 router.get('/online', async (req, res) => {
   try {

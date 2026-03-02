@@ -481,6 +481,7 @@ export default function Settings() {
             <h3 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">About</h3>
             <p className="text-sm text-gray-500">Hypercloud v1.5.0</p>
             <p className="text-xs text-gray-400 mt-1">Powered by Connection Technologies</p>
+            <CheckForUpdates />
           </section>
         </div>
 
@@ -904,5 +905,63 @@ function CallerIdSelector() {
       </div>
       {saving && <p className="text-[10px] text-blue-500 mt-1">Updating caller ID...</p>}
     </section>
+  );
+}
+
+function CheckForUpdates() {
+  const { updateAvailable } = useStore();
+  const [checking, setChecking] = useState(false);
+  const [result, setResult] = useState(null);
+
+  async function check() {
+    setChecking(true);
+    setResult(null);
+    try {
+      const versions = await ipc.checkForUpdates();
+      const latest = versions?.[0];
+      if (latest && latest.version !== '1.5.0') {
+        setState({ updateAvailable: { version: latest.version, downloadUrl: latest.download_url, force: latest.force_update } });
+        setResult({ update: true, version: latest.version });
+      } else {
+        setResult({ update: false });
+      }
+    } catch { setResult({ error: true }); }
+    setChecking(false);
+  }
+
+  function openDownload() {
+    if (updateAvailable?.downloadUrl) {
+      const url = updateAvailable.downloadUrl.startsWith('http') ? updateAvailable.downloadUrl : `https://appmanager.hyperclouduk.com${updateAvailable.downloadUrl}`;
+      window.open(url, '_blank');
+    }
+  }
+
+  return (
+    <div className="mt-3">
+      {updateAvailable ? (
+        <div className="flex items-center gap-2 p-2.5 bg-blue-50 border border-blue-200 rounded-lg">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-blue-500 shrink-0"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <div className="flex-1">
+            <div className="text-xs font-medium text-blue-700">Version {updateAvailable.version} available</div>
+          </div>
+          <button onClick={openDownload} className="px-3 py-1 text-xs font-semibold bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors">
+            Download
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <button onClick={check} disabled={checking}
+            className="px-3 py-1.5 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors disabled:opacity-50">
+            {checking ? 'Checking...' : 'Check for Updates'}
+          </button>
+          {result && !result.update && !result.error && (
+            <span className="text-[11px] text-green-600">You're up to date</span>
+          )}
+          {result?.error && (
+            <span className="text-[11px] text-red-500">Check failed</span>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

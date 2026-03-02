@@ -97,4 +97,5 @@ export async function uploadAvatar(file) {
   return res.json();
 }
 export const deleteAvatar = () => apiFetch('/api/profile/avatar', { method: 'DELETE' });
+export const checkForUpdates = () => apiFetch('/api/app/versions');
 export const updatePresence = (status) => apiFetch('/api/users/presence', { method: 'PUT', body: JSON.stringify({ status }) });

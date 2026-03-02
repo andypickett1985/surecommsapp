@@ -1024,6 +1024,26 @@ async function renderDownloads() {
       h('h1', { style:'font-size:24px;font-weight:700;color:#18181B' }, 'App Downloads'),
       h('p', { style:'color:#71717A;font-size:14px;margin-top:4px' }, 'Manage and distribute desktop app installers')),
     h('div', { style:'display:flex;gap:8px' },
+      h('button', { className:'btn btn-primary', onClick: async()=>{
+        try {
+          const versions = await api('/api/admin/versions');
+          const latest = versions?.[0];
+          if (!latest) { toast('No versions available', 'error'); return; }
+          const online = await api('/api/admin/devices/online');
+          const count = online?.online_users || 0;
+          if (!confirm(`Push update notification for v${latest.version} to ${count} connected app(s)?`)) return;
+          // Send updateAvailable to all connected clients
+          const orgs = await api('/api/admin/orgs');
+          let total = 0;
+          for (const org of orgs) {
+            try {
+              const r = await api(`/api/admin/devices/push-update/${org.id}`, { method:'POST', body:JSON.stringify({ version:latest.version, downloadUrl:latest.download_url, force:!!latest.force_update }) });
+              total += r.devices_notified || 0;
+            } catch {}
+          }
+          toast(`Update notification pushed to ${total} device(s)`);
+        } catch(e) { toast(e.message, 'error'); }
+      }}, 'Push Update to All Apps'),
       h('button', { className:'btn btn-secondary', onClick:()=>navigate('/') }, 'Back to Organizations'))));
 
   try {

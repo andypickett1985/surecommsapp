@@ -34,6 +34,7 @@ let state = {
     statuses: [],
   },
   ccSelectedQueue: null,
+  updateAvailable: null,
 };
 
 const listeners = new Set();

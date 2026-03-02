@@ -65,7 +65,7 @@ export default function Login({ onSuccess }) {
 
       {/* Content */}
       <div className="flex-1 flex flex-col items-center justify-center px-8 relative z-10 animate-fade-in">
-        {/* Sure Logo */}
+        {/* Brand Logo */}
         <div className="mb-8">
           <img src={sureLogo} alt="Connection Technologies" className="h-28 w-auto drop-shadow-2xl" />
         </div>

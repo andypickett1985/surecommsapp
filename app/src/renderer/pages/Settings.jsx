@@ -413,6 +413,9 @@ export default function Settings() {
             </section>
           )}
 
+          {/* Caller ID */}
+          <CallerIdSelector />
+
           {/* Connection */}
           <section>
             <h3 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Connection</h3>
@@ -849,5 +852,57 @@ function ForwardRow({ label, desc, enabled, destination, onToggle, onDestChange 
         </div>
       )}
     </div>
+  );
+}
+
+function CallerIdSelector() {
+  const [callerIds, setCallerIds] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    Promise.all([
+      ipc.getCallerIds().catch(() => []),
+      ipc.getSelectedCallerId().catch(() => null),
+    ]).then(([ids, sel]) => {
+      setCallerIds(ids || []);
+      setSelected(sel?.id || null);
+      setLoading(false);
+    });
+  }, []);
+
+  async function handleChange(cidId) {
+    setSaving(true);
+    try {
+      await ipc.setSelectedCallerId(cidId || null);
+      setSelected(cidId);
+    } catch {}
+    setSaving(false);
+  }
+
+  if (loading) return null;
+  if (callerIds.length === 0) return null;
+
+  return (
+    <section>
+      <h3 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-3">Caller ID</h3>
+      <div className="space-y-1">
+        {callerIds.map(cid => (
+          <label key={cid.id}
+            className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${selected === cid.id ? 'bg-blue-50 border border-blue-200' : 'hover:bg-gray-50 border border-transparent'}`}>
+            <input type="radio" name="callerid" value={cid.id} checked={selected === cid.id}
+              onChange={() => handleChange(cid.id)} disabled={saving}
+              className="w-3.5 h-3.5 text-blue-500 accent-blue-500" />
+            <div className="flex-1 min-w-0">
+              <div className="text-sm text-gray-700">{cid.label}</div>
+              <div className="text-[11px] text-gray-400">{cid.number}</div>
+            </div>
+            {cid.is_default && <span className="text-[9px] font-semibold text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded uppercase">Default</span>}
+          </label>
+        ))}
+      </div>
+      {saving && <p className="text-[10px] text-blue-500 mt-1">Updating caller ID...</p>}
+    </section>
   );
 }

@@ -34,6 +34,7 @@ app.use('/api/speed-dials', require('./routes/speed-dials'));
 app.use('/api/contacts', require('./routes/fpbx-contacts'));
 app.use('/api/call-forward', require('./routes/call-forward'));
 app.use('/api/call-center', require('./routes/call-center'));
+app.use('/api/caller-id', require('./routes/caller-id'));
 app.use('/api/sms', require('./routes/sms'));
 app.use('/api/profile', require('./routes/profile'));
 app.use('/api/chat-upload', require('./routes/chat-upload'));

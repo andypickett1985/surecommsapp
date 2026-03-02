@@ -28,7 +28,7 @@ export default function Sidebar() {
     <div className="w-[68px] bg-gray-50 border-r border-gray-200 flex flex-col items-center py-2 shrink-0">
       {/* Logo */}
       <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-4 mt-1 overflow-hidden">
-        <img src={sureIcon} alt="Sure" className="w-10 h-10 object-contain" />
+        <img src={sureIcon} alt="Hypercloud" className="w-10 h-10 object-contain" />
       </div>
 
       {/* Nav items */}

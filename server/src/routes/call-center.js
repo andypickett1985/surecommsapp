@@ -362,5 +362,92 @@ router.delete('/queues/:queueId/agents/:agentUuid', authenticateToken, async (re
   }
 });
 
+// ---- Pre-Recorded Messages ----
+
+router.get('/prerecorded', authenticateToken, async (req, res) => {
+  try {
+    const domainUuid = await getUserDomainUuid(req.user.id);
+    if (!domainUuid) return res.status(400).json({ error: 'No domain linked' });
+
+    const result = await fpbx.query(
+      `SELECT r.recording_uuid, r.recording_name, r.recording_filename, r.recording_description,
+              d.domain_name
+       FROM v_recordings r
+       JOIN v_domains d ON d.domain_uuid = r.domain_uuid
+       WHERE r.domain_uuid = $1 AND r.recording_prerecorded = 'true'
+       ORDER BY r.recording_name`,
+      [domainUuid]
+    );
+
+    const messages = result.rows.map(r => ({
+      id: r.recording_uuid,
+      name: r.recording_name,
+      filename: r.recording_filename,
+      description: r.recording_description,
+      path: `/var/lib/freeswitch/recordings/${r.domain_name}/${r.recording_filename}`,
+    }));
+
+    res.json(messages);
+  } catch (err) {
+    console.error('Pre-recorded messages error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/prerecorded/play', authenticateToken, async (req, res) => {
+  try {
+    const { recording_id, call_uuid, target } = req.body;
+    if (!recording_id) return res.status(400).json({ error: 'recording_id required' });
+
+    const domainUuid = await getUserDomainUuid(req.user.id);
+    if (!domainUuid) return res.status(400).json({ error: 'No domain linked' });
+
+    const recResult = await fpbx.query(
+      `SELECT r.recording_filename, d.domain_name
+       FROM v_recordings r
+       JOIN v_domains d ON d.domain_uuid = r.domain_uuid
+       WHERE r.recording_uuid = $1 AND r.domain_uuid = $2 AND r.recording_prerecorded = 'true'`,
+      [recording_id, domainUuid]
+    );
+    if (recResult.rows.length === 0) return res.status(404).json({ error: 'Recording not found' });
+
+    const { recording_filename, domain_name } = recResult.rows[0];
+    const filePath = `/var/lib/freeswitch/recordings/${domain_name}/${recording_filename}`;
+
+    // If a call_uuid is provided, play into the active call
+    if (call_uuid) {
+      const leg = target === 'bleg' ? 'bleg' : target === 'aleg' ? 'aleg' : 'both';
+      const result = await runFsCli(`uuid_broadcast ${call_uuid} ${filePath} ${leg}`);
+      
+      // Log the event
+      try {
+        await db.query(
+          `INSERT INTO prerecorded_events (id, tenant_id, user_id, recording_id, call_uuid, played_at)
+           VALUES (gen_random_uuid(), $1, $2, $3, $4, NOW())`,
+          [req.user.tenant_id, req.user.id, recording_id, call_uuid]
+        ).catch(() => {});
+      } catch {}
+
+      return res.json({ success: true, result: result.trim(), file: filePath });
+    }
+
+    res.json({ file: filePath, recording: recResult.rows[0] });
+  } catch (err) {
+    console.error('Pre-recorded play error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/prerecorded/stop', authenticateToken, async (req, res) => {
+  try {
+    const { call_uuid } = req.body;
+    if (!call_uuid) return res.status(400).json({ error: 'call_uuid required' });
+    const result = await runFsCli(`uuid_break ${call_uuid}`);
+    res.json({ success: true, result: result.trim() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
 

@@ -662,6 +662,85 @@ function renderConnectionTab(container, org, orgId) {
         h('input', { type:'checkbox', checked:org.opus_codec?'checked':undefined }), 'Use OPUS audio codec'),
       h('div', { className:'hint', style:'margin-left:24px' }, 'Enabling OPUS improves call quality on low bandwidth networks, but may cause small audio delays.'))));
   container.appendChild(appGrid);
+
+  // Caller ID Management
+  const cidSection = h('div', { style:'margin-top:32px' });
+  cidSection.appendChild(h('div', { style:'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px' },
+    h('div', {},
+      h('h3', { style:'font-size:16px;font-weight:600' }, 'Outbound Caller IDs'),
+      h('p', { style:'font-size:13px;color:var(--g500);margin-top:2px' }, 'Configure caller IDs that users can select when making outbound calls.')),
+    h('button', { className:'btn btn-sm btn-primary', onClick: () => showAddCallerIdModal(orgId, () => renderCallerIds()) }, '+ Add Caller ID')));
+
+  const cidList = h('div', { id:'cid-list' });
+  cidSection.appendChild(cidList);
+  container.appendChild(cidSection);
+
+  async function renderCallerIds() {
+    cidList.innerHTML = '';
+    try {
+      const cids = await api(`/api/caller-id/org/${orgId}`);
+      if (cids.length === 0) {
+        cidList.appendChild(h('p', { style:'color:var(--g400);font-size:13px' }, 'No caller IDs configured. Add one to allow users to select outbound caller ID.'));
+        return;
+      }
+      const table = h('table', { style:'width:100%;border-collapse:collapse;font-size:13px' },
+        h('thead', {}, h('tr', { style:'border-bottom:1px solid var(--g200)' },
+          h('th', { style:'text-align:left;padding:8px 12px;font-weight:500;color:var(--g500)' }, 'Label'),
+          h('th', { style:'text-align:left;padding:8px 12px;font-weight:500;color:var(--g500)' }, 'Number'),
+          h('th', { style:'text-align:center;padding:8px 12px;font-weight:500;color:var(--g500)' }, 'Default'),
+          h('th', { style:'text-align:center;padding:8px 12px;font-weight:500;color:var(--g500)' }, 'Active'),
+          h('th', { style:'text-align:right;padding:8px 12px' }, ''))));
+      cids.forEach(cid => {
+        table.appendChild(h('tr', { style:'border-bottom:1px solid var(--g100)' },
+          h('td', { style:'padding:8px 12px;font-weight:500' }, cid.label),
+          h('td', { style:'padding:8px 12px;color:var(--g600)' }, cid.number),
+          h('td', { style:'padding:8px 12px;text-align:center' }, cid.is_default ? h('span', { style:'color:#2563EB;font-size:11px;font-weight:600' }, 'DEFAULT') : ''),
+          h('td', { style:'padding:8px 12px;text-align:center' },
+            h('label', { className:'toggle' },
+              h('input', { type:'checkbox', checked:cid.active?'checked':undefined, onChange:async(e)=>{
+                await api(`/api/caller-id/${cid.id}`, { method:'PUT', body:JSON.stringify({ active:e.target.checked }) });
+                renderCallerIds();
+              }}), h('span', { className:'slider' }))),
+          h('td', { style:'padding:8px 12px;text-align:right' },
+            h('button', { className:'btn btn-sm btn-ghost', onClick:async()=>{
+              if(confirm('Delete this caller ID?')){
+                await api(`/api/caller-id/${cid.id}`, { method:'DELETE' });
+                toast('Caller ID deleted');
+                renderCallerIds();
+              }
+            }}, 'Delete'))));
+      });
+      cidList.appendChild(table);
+    } catch(e) { cidList.appendChild(h('p', { style:'color:#EF4444' }, 'Error: ' + e.message)); }
+  }
+  renderCallerIds();
+}
+
+function showAddCallerIdModal(orgId, onSaved) {
+  const ov = h('div', { className:'modal-overlay', onClick:e=>{if(e.target===ov)ov.remove();} });
+  const labelIn = h('input', { type:'text', placeholder:'e.g. Main Line, Sales, Support' });
+  const numberIn = h('input', { type:'text', placeholder:'+44207XXXXXXX' });
+  const defaultIn = h('input', { type:'checkbox' });
+
+  ov.appendChild(h('div', { className:'modal', style:'max-width:480px' },
+    h('div', { className:'modal-header' },
+      h('h2', {}, 'Add Caller ID'),
+      h('button', { className:'btn btn-ghost', onClick:()=>ov.remove() }, 'X')),
+    h('div', { className:'modal-body' },
+      h('div', { className:'form-group' }, h('label', {}, 'Label *'), labelIn, h('div', { className:'hint' }, 'A friendly name shown to users in the app.')),
+      h('div', { className:'form-group' }, h('label', {}, 'Number *'), numberIn, h('div', { className:'hint' }, 'The outbound caller ID number in E.164 format.')),
+      h('div', { style:'margin-top:12px' }, h('label', { style:'display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer' }, defaultIn, 'Set as default caller ID'))),
+    h('div', { className:'modal-footer' },
+      h('button', { className:'btn btn-secondary', onClick:()=>ov.remove() }, 'Cancel'),
+      h('button', { className:'btn btn-primary', onClick:async()=>{
+        if(!labelIn.value||!numberIn.value){toast('Label and number required','error');return;}
+        try{
+          await api(`/api/caller-id/org/${orgId}`, { method:'POST', body:JSON.stringify({ label:labelIn.value, number:numberIn.value, is_default:defaultIn.checked }) });
+          ov.remove(); toast('Caller ID added');
+          if(onSaved) onSaved();
+        }catch(e){toast(e.message,'error');}
+      }}, 'Add'))));
+  document.body.appendChild(ov);
 }
 
 /* ============ FEATURES TAB ============ */

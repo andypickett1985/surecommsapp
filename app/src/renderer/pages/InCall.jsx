@@ -24,6 +24,9 @@ export default function InCall() {
   const [transferring, setTransferring] = useState(false);
   const [recording, setRecording] = useState(true);
   const [maskActive, setMaskActive] = useState(false);
+  const [showPrerecorded, setShowPrerecorded] = useState(false);
+  const [prerecordedMsgs, setPrerecordedMsgs] = useState([]);
+  const [playingMsg, setPlayingMsg] = useState(null);
 
   useEffect(() => {
     if (callState?.state === 'confirmed') {
@@ -238,6 +241,15 @@ export default function InCall() {
               else { ipc.sendDtmf('*'); ipc.sendDtmf('5'); setMaskActive(true); }
             }, icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{maskActive ? <><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></> : <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>}</svg> },
             { label: transcribing ? 'Stop AI' : 'Transcribe', active: transcribing, onClick: transcribing ? stopTranscription : startTranscription, icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg> },
+            { label: playingMsg ? 'Stop Msg' : 'Messages', active: showPrerecorded || !!playingMsg, onClick: async () => {
+              if (playingMsg) {
+                await ipc.stopPrerecordedPlayback(callState?.uuid).catch(() => {});
+                setPlayingMsg(null);
+              } else {
+                setShowPrerecorded(true);
+                try { const msgs = await ipc.fetchPrerecordedMessages(); setPrerecordedMsgs(msgs || []); } catch { setPrerecordedMsgs([]); }
+              }
+            }, icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg> },
           ].map(({ label, active, onClick, icon }) => (
             <button key={label} onClick={onClick} className={`flex flex-col items-center gap-1.5 p-3 rounded-xl transition-all ${active ? 'bg-electric/30 text-white' : 'text-white/70 hover:text-white hover:bg-white/10'}`}>
               {icon}
@@ -316,6 +328,61 @@ export default function InCall() {
                   </button>
                 ))
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pre-recorded messages picker */}
+      {showPrerecorded && (
+        <div className="absolute inset-0 z-20 bg-black/45 flex items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-[#0f1f37] border border-white/15 rounded-2xl shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+              <div>
+                <h3 className="text-sm font-semibold text-white">Pre-Recorded Messages</h3>
+                <p className="text-[11px] text-white/50">Play a message to the caller</p>
+              </div>
+              <button onClick={() => setShowPrerecorded(false)} className="text-white/50 hover:text-white">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <div className="max-h-80 overflow-y-auto">
+              {prerecordedMsgs.length === 0 ? (
+                <div className="px-4 py-8 text-center text-white/40 text-xs">
+                  No pre-recorded messages available.<br/>
+                  <span className="text-white/25">Flag recordings as "Pre-Recorded" in FusionPBX.</span>
+                </div>
+              ) : (
+                prerecordedMsgs.map(msg => (
+                  <button
+                    key={msg.id}
+                    onClick={async () => {
+                      setPlayingMsg(msg.id);
+                      setShowPrerecorded(false);
+                      try {
+                        await ipc.playPrerecordedMessage(msg.id, callState?.uuid, 'both');
+                      } catch (err) {
+                        alert('Playback failed: ' + (err.message || 'Unknown'));
+                        setPlayingMsg(null);
+                      }
+                    }}
+                    className="w-full text-left px-4 py-3 border-b border-white/5 hover:bg-white/5 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center shrink-0">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-purple-300"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm text-white truncate">{msg.name}</div>
+                        {msg.description && <div className="text-[11px] text-white/40 truncate">{msg.description}</div>}
+                      </div>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+            <div className="px-4 py-2 border-t border-white/10">
+              <p className="text-[10px] text-white/30 text-center">Audio plays to both parties on the call</p>
             </div>
           </div>
         </div>

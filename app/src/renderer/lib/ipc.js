@@ -78,6 +78,12 @@ export const fetchCallCenterAvailableAgents = (qId) => apiFetch(`/api/call-cente
 export const addCallCenterQueueAgent = (qId, agentUuid, level, pos) => apiFetch(`/api/call-center/queues/${qId}/agents`, { method: 'POST', body: JSON.stringify({ call_center_agent_uuid: agentUuid, tier_level: level || 0, tier_position: pos || 0 }) });
 export const removeCallCenterQueueAgent = (qId, agentUuid) => apiFetch(`/api/call-center/queues/${qId}/agents/${agentUuid}`, { method: 'DELETE' });
 export const getProfile = () => apiFetch('/api/profile/me');
+export const getCallerIds = () => apiFetch('/api/caller-id/available');
+export const getSelectedCallerId = () => apiFetch('/api/caller-id/selected');
+export const setSelectedCallerId = (caller_id) => apiFetch('/api/caller-id/selected', { method: 'PUT', body: JSON.stringify({ caller_id }) });
+export const fetchPrerecordedMessages = () => apiFetch('/api/call-center/prerecorded');
+export const playPrerecordedMessage = (recording_id, call_uuid, target) => apiFetch('/api/call-center/prerecorded/play', { method: 'POST', body: JSON.stringify({ recording_id, call_uuid, target: target || 'both' }) });
+export const stopPrerecordedPlayback = (call_uuid) => apiFetch('/api/call-center/prerecorded/stop', { method: 'POST', body: JSON.stringify({ call_uuid }) });
 export const sendSms = (to, message) => apiFetch('/api/sms/send', { method: 'POST', body: JSON.stringify({ to, message }) });
 export const getSmsHistory = (phone) => apiFetch(`/api/sms/history${phone ? '?phone=' + encodeURIComponent(phone) : ''}`);
 export async function uploadAvatar(file) {

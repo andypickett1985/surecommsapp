@@ -147,7 +147,7 @@ static int init_pjsua() {
     ua_cfg.cb.on_call_state = &on_call_state;
     ua_cfg.cb.on_call_media_state = &on_call_media_state;
     ua_cfg.max_calls = 4;
-    ua_cfg.user_agent = pj_str("SureCloudVoice/1.0");
+    ua_cfg.user_agent = pj_str("Hypercloud/1.3");
 
     pjsua_logging_config log_cfg;
     pjsua_logging_config_default(&log_cfg);

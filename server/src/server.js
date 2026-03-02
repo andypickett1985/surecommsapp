@@ -28,7 +28,12 @@ app.use('/api/admin/devices', require('./routes/admin-devices'));
 app.use('/api/admin/versions', require('./routes/admin-versions'));
 app.use('/api/admin/diagnostics', require('./routes/admin-diagnostics'));
 app.use('/api/admin/user-settings', require('./routes/admin-user-settings'));
-app.use('/api/app/versions', require('./routes/admin-versions'));
+app.get('/api/app/versions', require('./middleware/auth').authenticateToken, async (req, res) => {
+  try {
+    const result = await require('./db').query("SELECT version, download_url, force_update, release_notes, created_at FROM app_versions WHERE published=true ORDER BY created_at DESC LIMIT 5");
+    res.json(result.rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
 app.use('/api/users', require('./routes/user-directory'));
 app.use('/api/conversations', require('./routes/conversations'));
 app.use('/api/speed-dials', require('./routes/speed-dials'));

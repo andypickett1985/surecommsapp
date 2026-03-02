@@ -236,9 +236,11 @@ export default function InCall() {
             { label: 'Mute', active: muted, onClick: doMute, icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/></svg> },
             { label: 'Hold', active: held, onClick: doHold, icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> },
             { label: 'Transfer', active: showTransferPanel, onClick: () => { setShowTransferPanel(true); setTransferStatus(''); }, icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><path d="M15 3h6v6"/><path d="M10 14L21 3"/></svg> },
-            { label: maskActive ? 'Unmask' : 'Mask', active: maskActive, onClick: () => {
-              if (maskActive) { ipc.sendDtmf('*'); ipc.sendDtmf('6'); setMaskActive(false); }
-              else { ipc.sendDtmf('*'); ipc.sendDtmf('5'); setMaskActive(true); }
+            { label: maskActive ? 'Unmask' : 'Mask', active: maskActive, onClick: async () => {
+              try {
+                if (maskActive) { await ipc.unmaskRecording(); setMaskActive(false); }
+                else { await ipc.maskRecording(); setMaskActive(true); }
+              } catch (err) { alert('Mask/unmask failed: ' + (err.message || 'Unknown error')); }
             }, icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{maskActive ? <><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></> : <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>}</svg> },
             { label: transcribing ? 'Stop AI' : 'Transcribe', active: transcribing, onClick: transcribing ? stopTranscription : startTranscription, icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg> },
             { label: playingMsg ? 'Stop Msg' : 'Messages', active: showPrerecorded || !!playingMsg, onClick: async () => {

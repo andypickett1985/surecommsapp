@@ -425,24 +425,79 @@ router.post('/prerecorded/play', authenticateToken, async (req, res) => {
     const { recording_filename, domain_name } = recResult.rows[0];
     const filePath = `/var/lib/freeswitch/recordings/${domain_name}/${recording_filename}`;
 
-    // If a call_uuid is provided, play into the active call
-    if (call_uuid) {
-      const leg = target === 'bleg' ? 'bleg' : target === 'aleg' ? 'aleg' : 'both';
-      const result = await runFsCli(`uuid_broadcast ${call_uuid} ${filePath} ${leg}`);
-      
-      // Log the event
-      try {
-        await db.query(
-          `INSERT INTO prerecorded_events (id, tenant_id, user_id, recording_id, call_uuid, played_at)
-           VALUES (gen_random_uuid(), $1, $2, $3, $4, NOW())`,
-          [req.user.tenant_id, req.user.id, recording_id, call_uuid]
-        ).catch(() => {});
-      } catch {}
-
-      return res.json({ success: true, result: result.trim(), file: filePath });
+    // Find the active FS channel UUID for this user's extension
+    let fsUuid = call_uuid;
+    if (!fsUuid || fsUuid === 'undefined' || fsUuid === 'null') {
+      // Look up the user's SIP extension and find their active channel
+      const sipResult = await db.query(
+        `SELECT s.sip_username, t.sip_domain FROM sip_accounts s
+         JOIN users u ON u.id = s.user_id JOIN tenants t ON t.id = u.tenant_id
+         WHERE s.user_id = $1 LIMIT 1`,
+        [req.user.id]
+      );
+      if (sipResult.rows.length > 0) {
+        const { sip_username, sip_domain } = sipResult.rows[0];
+        const channelsRaw = await runFsCli('show channels');
+        const lines = channelsRaw.split('\n');
+        for (const line of lines) {
+          if (line.includes(`${sip_username}@${sip_domain}`) || line.includes(`/${sip_username}@`)) {
+            const uuid = line.split(',')[0];
+            if (uuid && uuid.length > 30) { fsUuid = uuid; break; }
+          }
+        }
+      }
     }
 
-    res.json({ file: filePath, recording: recResult.rows[0] });
+    if (!fsUuid) {
+      return res.status(400).json({ error: 'No active call found for your extension' });
+    }
+
+    const leg = target === 'bleg' ? 'bleg' : target === 'aleg' ? 'aleg' : 'both';
+    const result = await runFsCli(`uuid_broadcast ${fsUuid} ${filePath} ${leg}`);
+    console.log(`[PRERECORDED] uuid_broadcast ${fsUuid} ${filePath} ${leg} -> ${result}`);
+
+    // Log the event
+    try {
+      await db.query(
+        `INSERT INTO prerecorded_events (id, tenant_id, user_id, recording_id, call_uuid, played_at)
+         VALUES (gen_random_uuid(), $1, $2, $3, $4, NOW())`,
+        [req.user.tenant_id, req.user.id, recording_id, fsUuid]
+      ).catch(() => {});
+    } catch {}
+
+    res.json({ success: true, result: result.trim(), file: filePath, uuid: fsUuid });
+  } catch (err) {
+    console.error('Pre-recorded play error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/prerecorded/stop', authenticateToken, async (req, res) => {
+  try {
+    let { call_uuid } = req.body;
+
+    if (!call_uuid || call_uuid === 'undefined' || call_uuid === 'null') {
+      const sipResult = await db.query(
+        `SELECT s.sip_username, t.sip_domain FROM sip_accounts s
+         JOIN users u ON u.id = s.user_id JOIN tenants t ON t.id = u.tenant_id
+         WHERE s.user_id = $1 LIMIT 1`,
+        [req.user.id]
+      );
+      if (sipResult.rows.length > 0) {
+        const { sip_username, sip_domain } = sipResult.rows[0];
+        const channelsRaw = await runFsCli('show channels');
+        for (const line of channelsRaw.split('\n')) {
+          if (line.includes(`${sip_username}@${sip_domain}`) || line.includes(`/${sip_username}@`)) {
+            const uuid = line.split(',')[0];
+            if (uuid && uuid.length > 30) { call_uuid = uuid; break; }
+          }
+        }
+      }
+    }
+
+    if (!call_uuid) return res.status(400).json({ error: 'No active call found' });
+    const result = await runFsCli(`uuid_break ${call_uuid}`);
+    res.json({ success: true, result: result.trim() });
   } catch (err) {
     console.error('Pre-recorded play error:', err);
     res.status(500).json({ error: err.message });
@@ -456,6 +511,83 @@ router.post('/prerecorded/stop', authenticateToken, async (req, res) => {
     const result = await runFsCli(`uuid_break ${call_uuid}`);
     res.json({ success: true, result: result.trim() });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- Recording Mask/Unmask with audio notification ----
+
+async function findUserChannelUuid(userId) {
+  const sipResult = await db.query(
+    `SELECT s.sip_username, t.sip_domain FROM sip_accounts s
+     JOIN users u ON u.id = s.user_id JOIN tenants t ON t.id = u.tenant_id
+     WHERE s.user_id = $1 LIMIT 1`,
+    [userId]
+  );
+  if (sipResult.rows.length === 0) return null;
+  const { sip_username, sip_domain } = sipResult.rows[0];
+  const channelsRaw = await runFsCli('show channels');
+  for (const line of channelsRaw.split('\n')) {
+    if (line.includes(`${sip_username}@${sip_domain}`) || line.includes(`/${sip_username}@`)) {
+      const uuid = line.split(',')[0];
+      if (uuid && uuid.length > 30) return { uuid, sip_username, sip_domain };
+    }
+  }
+  return null;
+}
+
+router.post('/recording/mask', authenticateToken, async (req, res) => {
+  try {
+    const ch = await findUserChannelUuid(req.user.id);
+    if (!ch) return res.status(400).json({ error: 'No active call found' });
+
+    const domainUuid = await getUserDomainUuid(req.user.id);
+    let domainName = ch.sip_domain;
+    if (domainUuid) {
+      const d = await fpbx.query('SELECT domain_name FROM v_domains WHERE domain_uuid = $1', [domainUuid]);
+      if (d.rows.length > 0) domainName = d.rows[0].domain_name;
+    }
+
+    const recPath = `/var/lib/freeswitch/recordings/${domainName}/archive/\${strftime(%Y)}/\${strftime(%b)}/\${strftime(%d)}/${ch.uuid}.\${record_ext}`;
+    const maskResult = await runFsCli(`uuid_record ${ch.uuid} mask ${recPath}`);
+    console.log(`[MASK] uuid_record mask: ${maskResult}`);
+
+    // Play "Call Recording Paused" notification to both parties
+    const pausedAudio = `/var/lib/freeswitch/recordings/${domainName}/Call_Recording_Paused.mp3`;
+    const playResult = await runFsCli(`uuid_broadcast ${ch.uuid} ${pausedAudio} both`);
+    console.log(`[MASK] Played paused notification: ${playResult}`);
+
+    res.json({ success: true, masked: true, uuid: ch.uuid });
+  } catch (err) {
+    console.error('Recording mask error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/recording/unmask', authenticateToken, async (req, res) => {
+  try {
+    const ch = await findUserChannelUuid(req.user.id);
+    if (!ch) return res.status(400).json({ error: 'No active call found' });
+
+    const domainUuid = await getUserDomainUuid(req.user.id);
+    let domainName = ch.sip_domain;
+    if (domainUuid) {
+      const d = await fpbx.query('SELECT domain_name FROM v_domains WHERE domain_uuid = $1', [domainUuid]);
+      if (d.rows.length > 0) domainName = d.rows[0].domain_name;
+    }
+
+    const recPath = `/var/lib/freeswitch/recordings/${domainName}/archive/\${strftime(%Y)}/\${strftime(%b)}/\${strftime(%d)}/${ch.uuid}.\${record_ext}`;
+    const unmaskResult = await runFsCli(`uuid_record ${ch.uuid} unmask ${recPath}`);
+    console.log(`[UNMASK] uuid_record unmask: ${unmaskResult}`);
+
+    // Play "Call Recording Unpaused" notification to both parties
+    const unpausedAudio = `/var/lib/freeswitch/recordings/${domainName}/Call_Recording_Unpaused.mp3`;
+    const playResult = await runFsCli(`uuid_broadcast ${ch.uuid} ${unpausedAudio} both`);
+    console.log(`[UNMASK] Played unpaused notification: ${playResult}`);
+
+    res.json({ success: true, masked: false, uuid: ch.uuid });
+  } catch (err) {
+    console.error('Recording unmask error:', err);
     res.status(500).json({ error: err.message });
   }
 });

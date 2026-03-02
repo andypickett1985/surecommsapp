@@ -98,4 +98,6 @@ export async function uploadAvatar(file) {
 }
 export const deleteAvatar = () => apiFetch('/api/profile/avatar', { method: 'DELETE' });
 export const checkForUpdates = () => apiFetch('/api/app/versions');
+export const maskRecording = () => apiFetch('/api/call-center/recording/mask', { method: 'POST' });
+export const unmaskRecording = () => apiFetch('/api/call-center/recording/unmask', { method: 'POST' });
 export const updatePresence = (status) => apiFetch('/api/users/presence', { method: 'PUT', body: JSON.stringify({ status }) });

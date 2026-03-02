@@ -36,6 +36,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('transcription:status', (_, data) => callback(data));
   },
 
+  uploadNetworkTestResults: (results) => ipcRenderer.invoke('ws:uploadNetworkTest', results),
+  uploadSipLog: (logData) => ipcRenderer.invoke('ws:uploadSipLog', logData),
+
   windowMinimize: () => ipcRenderer.invoke('window:minimize'),
   windowMaximize: () => ipcRenderer.invoke('window:maximize'),
   windowClose: () => ipcRenderer.invoke('window:close'),

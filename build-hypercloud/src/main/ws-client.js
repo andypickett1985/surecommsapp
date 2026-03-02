@@ -46,6 +46,11 @@ class WsClient extends EventEmitter {
             return;
           }
 
+          if (msg.event === 'requestNetworkTest') {
+            this.emit('event', { event: 'requestNetworkTest' });
+            return;
+          }
+
           this.emit('event', msg);
         } catch {}
       });
@@ -88,6 +93,14 @@ class WsClient extends EventEmitter {
 
   uploadSipLog(logData) {
     this.send({ event: 'sipLogUpload', logData });
+  }
+
+  reportCallState(state, number, direction) {
+    this.send({ event: 'callStateUpdate', state, number, direction });
+  }
+
+  uploadNetworkTestResults(results) {
+    this.send({ event: 'networkTestResults', results });
   }
 }
 

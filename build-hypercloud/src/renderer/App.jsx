@@ -65,6 +65,9 @@ export default function App() {
         case 'pushConfig':
           if (data.settings) setState({ orgSettings: data.settings });
           break;
+        case 'requestNetworkTest':
+          runRemoteNetworkTest();
+          break;
       }
     });
     checkSession();
@@ -142,6 +145,44 @@ export default function App() {
     if (!raw) return '';
     const m = raw.match(/(?:<)?sip:([^@>]+)@[^>]*/i);
     return m ? m[1] : raw.replace(/^["']|["']$/g, '').trim();
+  }
+
+  async function runRemoteNetworkTest() {
+    try {
+      const r = {};
+      const PROV = 'https://appmanager.hyperclouduk.com';
+      // Latency
+      const times = [];
+      for (let i = 0; i < 5; i++) {
+        const t0 = performance.now();
+        await fetch(PROV + '/api/health', { cache: 'no-store' });
+        times.push(Math.round(performance.now() - t0));
+      }
+      r.latency = { min: Math.min(...times), max: Math.max(...times), avg: Math.round(times.reduce((a, b) => a + b, 0) / times.length) };
+      // Download
+      try {
+        const t0 = performance.now();
+        const res = await fetch(PROV + '/speedtest.bin?r=' + Date.now(), { cache: 'no-store' });
+        const blob = await res.blob();
+        const elapsed = (performance.now() - t0) / 1000;
+        r.download = { mbps: parseFloat(((blob.size / (1024 * 1024)) / elapsed * 8).toFixed(1)) };
+      } catch { r.download = { error: 'failed' }; }
+      // NAT
+      try {
+        const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+        const candidates = [];
+        pc.createDataChannel('test');
+        pc.onicecandidate = (e) => { if (e.candidate) candidates.push(e.candidate.candidate); };
+        await pc.createOffer().then(o => pc.setLocalDescription(o));
+        await new Promise(res => setTimeout(res, 3000));
+        pc.close();
+        r.nat = { type: candidates.some(c => c.includes('relay')) ? 'Symmetric' : candidates.some(c => c.includes('srflx')) ? 'NAT (OK)' : 'Open', candidates: candidates.length };
+      } catch { r.nat = { type: 'unknown' }; }
+      r.timestamp = new Date().toISOString();
+      r.userAgent = navigator.userAgent;
+      localStorage.setItem('scv_last_nettest', JSON.stringify(r));
+      window.electronAPI?.uploadNetworkTestResults?.(r);
+    } catch {}
   }
 
   function addCallToHistory(data) {

@@ -69,6 +69,21 @@ function setupIPC() {
 
   wsClient = new WsClient();
   wsClient.on('event', (data) => {
+    if (data.event === 'sipLogRequested') {
+      const duration = data.duration || 30;
+      console.log(`[DIAG] SIP log capture requested for ${duration}s`);
+      sipEngine.startLogCapture(duration);
+      setTimeout(() => {
+        const logData = sipEngine.stopLogCapture();
+        console.log(`[DIAG] SIP log captured: ${logData.length} chars`);
+        wsClient.uploadSipLog(logData);
+      }, duration * 1000);
+      return;
+    }
+    if (data.event === 'requestNetworkTest') {
+      mainWindow?.webContents.send('ws:event', data);
+      return;
+    }
     mainWindow?.webContents.send('ws:event', data);
   });
 
@@ -188,6 +203,19 @@ function setupIPC() {
     } else {
       mainWindow?.webContents.send('sip:event', data);
 
+      // Report call state changes to server for admin portal visibility
+      if (data.event === 'callState') {
+        const state = data.state || 'idle';
+        const number = data.number || '';
+        const direction = data.direction || '';
+        wsClient?.reportCallState(state, number, direction);
+        if (state === 'disconnected') {
+          wsClient?.reportCallState(null, null, null);
+        }
+      } else if (data.event === 'incomingCall') {
+        wsClient?.reportCallState('ringing', data.number || '', 'in');
+      }
+
       if (data.event === 'incomingCall') {
         if (mainWindow) {
           if (!mainWindow.isVisible()) mainWindow.show();
@@ -218,6 +246,16 @@ function setupIPC() {
         }
       }
     }
+  });
+
+  ipcMain.handle('ws:uploadNetworkTest', (_, results) => {
+    wsClient?.uploadNetworkTestResults(results);
+    return { success: true };
+  });
+
+  ipcMain.handle('ws:uploadSipLog', (_, logData) => {
+    wsClient?.uploadSipLog(logData);
+    return { success: true };
   });
 
   ipcMain.handle('window:minimize', () => mainWindow?.minimize());

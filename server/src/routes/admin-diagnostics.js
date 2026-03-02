@@ -92,6 +92,18 @@ router.post('/sip-capture', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Request remote network test from a user's device
+router.post('/request-network-test/:userId', async (req, res) => {
+  try {
+    const sent = sendCommandToUser(req.params.userId, { event: 'requestNetworkTest' });
+    if (sent) {
+      res.json({ success: true, message: 'Network test request sent to device' });
+    } else {
+      res.json({ success: false, message: 'Device not online' });
+    }
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // List diagnostic logs
 router.get('/logs', async (req, res) => {
   try {

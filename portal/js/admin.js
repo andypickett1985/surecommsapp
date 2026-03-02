@@ -883,34 +883,66 @@ function renderFeaturesTab(container, org, orgId) {
 /* ============ DEVICES TAB ============ */
 async function renderDevicesTab(container, org, orgId) {
   container.appendChild(h('div', { style:'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px' },
-    h('h2', { style:'font-size:16px' }, 'Connected Devices'),
+    h('h2', { style:'font-size:16px' }, 'Connected Devices & Call State'),
     h('div', { style:'display:flex;gap:8px' },
-      h('button', { className:'btn btn-sm btn-danger', onClick: async()=>{ if(confirm('Force logout ALL users in this org?')){try{const r=await api(`/api/admin/devices/force-logout-all/${orgId}`,{method:'POST'});toast(`Logged out ${r.devices_notified} devices`);}catch(e){toast(e.message,'error');}} } }, 'Force Logout All'),
+      h('button', { className:'btn btn-sm btn-secondary', onClick:loadDevices }, 'Refresh'),
+      h('button', { className:'btn btn-sm btn-danger', onClick: async()=>{ if(confirm('Force logout ALL users in this org?')){try{const r=await api(`/api/admin/devices/force-logout-all/${orgId}`,{method:'POST'});toast(`Logged out ${r.devices_notified} devices`);loadDevices();}catch(e){toast(e.message,'error');}} } }, 'Force Logout All'),
       h('button', { className:'btn btn-sm btn-secondary', onClick: async()=>{ try{const r=await api(`/api/admin/devices/push-config/${orgId}`,{method:'POST'});toast(`Config pushed to ${r.devices_notified} devices`);}catch(e){toast(e.message,'error');} } }, 'Push Config All'))));
 
-  try {
-    const devices = await api(`/api/admin/devices/org/${orgId}`);
-    if (devices.length === 0) { container.appendChild(h('div', { className:'empty' }, h('p', {}, 'No devices registered yet.'))); return; }
+  const devList = h('div');
+  container.appendChild(devList);
 
-    container.appendChild(h('div', { className:'table-wrap' },
-      h('table', {},
-        h('thead', {}, h('tr', {},
-          h('th', {}, 'Status'), h('th', {}, 'User'), h('th', {}, 'Device'), h('th', {}, 'App Version'), h('th', {}, 'OS'), h('th', {}, 'Last Seen'), h('th', {}, 'Actions'))),
-        h('tbody', {}, ...devices.map(d => {
-          const lastSeen = d.last_seen ? new Date(d.last_seen).toLocaleString() : '-';
-          return h('tr', {},
-            h('td', {}, h('span', { style:`display:inline-block;width:10px;height:10px;border-radius:50%;background:${d.online?'#10B981':'#D4D4D8'}` })),
-            h('td', {}, h('div', {}, d.display_name || d.email), h('div', { style:'font-size:11px;color:var(--g400)' }, d.email)),
-            h('td', {}, d.device_name || 'SureCloudVoice'),
-            h('td', {}, h('span', { className:'badge badge-blue' }, d.app_version || 'unknown')),
-            h('td', { style:'font-size:12px;color:var(--g500)' }, d.os_version || '-'),
-            h('td', { style:'font-size:12px;color:var(--g500)' }, lastSeen),
-            h('td', {},
-              h('button', { className:'btn btn-sm btn-secondary', style:'margin-right:4px', onClick: async()=>{ try{await api(`/api/admin/devices/force-logout/${d.user_id}`,{method:'POST'});toast('Force logout sent');}catch(e){toast(e.message,'error');} } }, 'Logout'),
-              h('button', { className:'btn btn-sm btn-danger', onClick: async()=>{ if(confirm('Wipe device config?')){try{await api(`/api/admin/devices/wipe/${d.user_id}`,{method:'POST'});toast('Wipe command sent');}catch(e){toast(e.message,'error');}} } }, 'Wipe'),
-              h('button', { className:'btn btn-sm btn-secondary', onClick: async()=>{ try{await api(`/api/admin/devices/restart/${d.user_id}`,{method:'POST'});toast('Restart sent');}catch(e){toast(e.message,'error');} } }, 'Restart')));
-        })))));
-  } catch (err) { container.appendChild(h('p', { style:'color:red' }, 'Error: ' + err.message)); }
+  async function loadDevices() {
+    devList.innerHTML = '';
+    try {
+      const devices = await api(`/api/admin/devices/org/${orgId}`);
+      if (devices.length === 0) { devList.appendChild(h('div', { className:'empty' }, h('p', {}, 'No devices registered yet.'))); return; }
+
+      const onlineCount = devices.filter(d => d.online).length;
+      const onCallCount = devices.filter(d => d.call_state && d.call_state !== 'idle').length;
+
+      devList.appendChild(h('div', { style:'display:flex;gap:12px;margin-bottom:16px' },
+        h('div', { style:'padding:10px 16px;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;font-size:13px' },
+          h('span', { style:'font-weight:700;color:#16A34A;font-size:18px' }, String(onlineCount)), h('span', { style:'color:#4ADE80;margin-left:6px' }, 'Online')),
+        h('div', { style:'padding:10px 16px;background:#FEF3C7;border:1px solid #FDE68A;border-radius:8px;font-size:13px' },
+          h('span', { style:'font-weight:700;color:#D97706;font-size:18px' }, String(onCallCount)), h('span', { style:'color:#F59E0B;margin-left:6px' }, 'On Call')),
+        h('div', { style:'padding:10px 16px;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;font-size:13px' },
+          h('span', { style:'font-weight:700;color:#2563EB;font-size:18px' }, String(devices.length)), h('span', { style:'color:#60A5FA;margin-left:6px' }, 'Total'))));
+
+      devList.appendChild(h('div', { className:'table-wrap' },
+        h('table', {},
+          h('thead', {}, h('tr', {},
+            h('th', {}, 'Status'), h('th', {}, 'User'), h('th', {}, 'Call State'), h('th', {}, 'Device'), h('th', {}, 'Version'), h('th', {}, 'Last Seen'), h('th', {}, 'Actions'))),
+          h('tbody', {}, ...devices.map(d => {
+            const lastSeen = d.last_seen ? new Date(d.last_seen).toLocaleString() : '-';
+            const isOnCall = d.call_state && d.call_state !== 'idle' && d.call_state !== 'disconnected';
+            const callStateColor = isOnCall ? (d.call_state === 'confirmed' ? '#DC2626' : '#F59E0B') : '#10B981';
+            const callStateText = isOnCall ? (d.call_state === 'confirmed' ? 'On Call' : d.call_state === 'early' ? 'Ringing' : d.call_state === 'calling' ? 'Dialling' : d.call_state) : 'Idle';
+            const callInfo = isOnCall && d.call_number ? `${d.call_direction === 'in' ? '\u2190' : '\u2192'} ${d.call_number}` : '';
+
+            return h('tr', { style: isOnCall ? 'background:#FEF2F2' : '' },
+              h('td', {}, h('span', { style:`display:inline-block;width:10px;height:10px;border-radius:50%;background:${d.online?'#10B981':'#D4D4D8'}` })),
+              h('td', {}, h('div', { style:'font-weight:500' }, d.display_name || d.email), h('div', { style:'font-size:11px;color:var(--g400)' }, d.email)),
+              h('td', {},
+                h('div', { style:'display:flex;align-items:center;gap:6px' },
+                  h('span', { style:`display:inline-block;width:8px;height:8px;border-radius:50%;background:${d.online ? callStateColor : '#D4D4D8'}` }),
+                  h('span', { style:`font-size:12px;font-weight:600;color:${d.online ? callStateColor : '#A1A1AA'}` }, d.online ? callStateText : 'Offline')),
+                callInfo ? h('div', { style:'font-size:11px;color:#6B7280;margin-top:2px' }, callInfo) : null),
+              h('td', { style:'font-size:12px' }, d.device_name || '-'),
+              h('td', {}, h('span', { className:'badge badge-blue' }, d.app_version || '?')),
+              h('td', { style:'font-size:11px;color:var(--g500)' }, lastSeen),
+              h('td', {},
+                h('div', { style:'display:flex;gap:3px;flex-wrap:wrap' },
+                  d.online ? h('button', { className:'btn btn-sm btn-secondary', title:'Request network test', onClick: async()=>{ try{const r=await api(`/api/admin/diagnostics/request-network-test/${d.user_id}`,{method:'POST'});toast(r.message);}catch(e){toast(e.message,'error');} } }, 'Net Test') : null,
+                  d.online ? h('button', { className:'btn btn-sm btn-secondary', title:'Request SIP log', onClick: async()=>{ try{const r=await api(`/api/admin/diagnostics/request-log/${d.user_id}`,{method:'POST'});toast(r.message);}catch(e){toast(e.message,'error');} } }, 'SIP Log') : null,
+                  h('button', { className:'btn btn-sm btn-secondary', onClick: async()=>{ try{await api(`/api/admin/devices/force-logout/${d.user_id}`,{method:'POST'});toast('Logout sent');loadDevices();}catch(e){toast(e.message,'error');} } }, 'Logout'),
+                  h('button', { className:'btn btn-sm btn-ghost', style:'color:#EF4444', onClick: async()=>{ if(confirm('Wipe device?')){try{await api(`/api/admin/devices/wipe/${d.user_id}`,{method:'POST'});toast('Wipe sent');}catch(e){toast(e.message,'error');}} } }, 'Wipe'))));
+          })))));
+    } catch (err) { devList.appendChild(h('p', { style:'color:red' }, 'Error: ' + err.message)); }
+  }
+  loadDevices();
+  const refreshInterval = setInterval(loadDevices, 10000);
+  container._cleanup = () => clearInterval(refreshInterval);
 }
 
 /* ============ DIAGNOSTICS TAB ============ */
@@ -966,7 +998,7 @@ async function renderDiagnosticsTab(container, org, orgId) {
           h('tbody', {}, ...logs.map(l => {
             const size = l.file_size ? `${(l.file_size/1024).toFixed(1)} KB` : '-';
             return h('tr', {},
-              h('td', {}, h('span', { className:`badge ${l.log_type==='sip_capture'?'badge-blue':'badge-green'}` }, l.log_type === 'sip_capture' ? 'Capture' : 'App Log')),
+              h('td', {}, h('span', { className:`badge ${l.log_type==='sip_capture'?'badge-blue':l.log_type==='network_test'?'badge-orange':'badge-green'}` }, l.log_type === 'sip_capture' ? 'SIP Capture' : l.log_type === 'network_test' ? 'Net Test' : 'SIP Log')),
               h('td', {}, l.display_name || l.email || '-'),
               h('td', { style:'font-size:12px' }, `${l.node||'-'} / ${l.extension||'-'}`),
               h('td', {}, h('span', { className:`badge ${l.status==='complete'?'badge-green':l.status==='capturing'?'badge-orange':'badge-gray'}` }, l.status)),

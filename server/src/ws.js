@@ -54,6 +54,23 @@ function setupWebSocket(server) {
             handleSipLogUpload(payload, msg);
           } else if (msg.event === 'pong') {
             ws.lastPong = Date.now();
+          } else if (msg.event === 'callStateUpdate') {
+            ws.callState = msg.state || null;
+            ws.callNumber = msg.number || null;
+            ws.callDirection = msg.direction || null;
+            db.query(
+              `UPDATE devices SET call_state = $1, call_number = $2, call_direction = $3, last_seen = NOW() WHERE user_id = $4`,
+              [msg.state || null, msg.number || null, msg.direction || null, payload.id]
+            ).catch(() => {});
+            broadcastToTenant(payload.tenant_id, {
+              event: 'userCallState',
+              userId: payload.id,
+              state: msg.state,
+              number: msg.number,
+              direction: msg.direction,
+            });
+          } else if (msg.event === 'networkTestResults') {
+            handleNetworkTestResults(payload, msg);
           }
         } catch {}
       });
@@ -65,7 +82,7 @@ function setupWebSocket(server) {
           if (userSockets.size === 0) {
             clients.delete(payload.id);
             broadcastToTenant(payload.tenant_id, { event: 'presenceChange', userId: payload.id, status: 'offline' });
-            await db.query('UPDATE devices SET online=false, last_seen=NOW() WHERE user_id=$1', [payload.id]).catch(() => {});
+            await db.query('UPDATE devices SET online=false, call_state=NULL, call_number=NULL, call_direction=NULL, last_seen=NOW() WHERE user_id=$1', [payload.id]).catch(() => {});
           }
         }
       });
@@ -171,6 +188,25 @@ async function handleSipLogUpload(user, msg) {
       [user.id, user.tenant_id, filename, filePath, (msg.logData || '').length]
     );
   } catch (e) { console.error('Log upload error:', e); }
+}
+
+async function handleNetworkTestResults(user, msg) {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const logDir = path.join(__dirname, '..', 'diagnostic-logs');
+    if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+
+    const filename = `network-test-${user.id}-${Date.now()}.json`;
+    const filePath = path.join(logDir, filename);
+    fs.writeFileSync(filePath, JSON.stringify(msg.results || {}, null, 2));
+
+    await db.query(
+      `INSERT INTO diagnostic_logs (user_id, tenant_id, log_type, filename, file_path, file_size, status)
+       VALUES ($1, $2, 'network_test', $3, $4, $5, 'complete')`,
+      [user.id, user.tenant_id, filename, filePath, JSON.stringify(msg.results || {}).length]
+    );
+  } catch (e) { console.error('Network test results save error:', e); }
 }
 
 module.exports = { setupWebSocket, broadcast, broadcastToTenant, sendCommandToUser, sendCommandToTenant, getOnlineUsers, clients };

@@ -454,7 +454,7 @@ export default function Settings() {
                   </button>
                   {showDebugLog && (
                     <div className="px-3 py-2 bg-gray-900 rounded-lg text-[10px] font-mono text-green-400 max-h-40 overflow-y-auto space-y-0.5">
-                      <div>App: Hypercloud v1.5.0</div>
+                      <div>App: Hypercloud v1.5.1</div>
                       <div>SIP: {regStatus.code === 200 ? 'Registered' : `Error ${regStatus.code}`} {regStatus.reason}</div>
                       <div>Server: {account?.server || 'none'}</div>
                       <div>Ext: {account?.username || 'none'}</div>
@@ -479,7 +479,7 @@ export default function Settings() {
 
           <section>
             <h3 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">About</h3>
-            <p className="text-sm text-gray-500">Hypercloud v1.5.0</p>
+            <p className="text-sm text-gray-500">Hypercloud v1.5.1</p>
             <p className="text-xs text-gray-400 mt-1">Powered by Connection Technologies</p>
             <CheckForUpdates />
           </section>
@@ -919,7 +919,7 @@ function CheckForUpdates() {
     try {
       const versions = await ipc.checkForUpdates();
       const latest = versions?.[0];
-      if (latest && latest.version !== '1.5.0') {
+      if (latest && latest.version !== '1.5.1') {
         setState({ updateAvailable: { version: latest.version, downloadUrl: latest.download_url, force: latest.force_update } });
         setResult({ update: true, version: latest.version });
       } else {

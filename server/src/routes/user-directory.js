@@ -24,12 +24,25 @@ router.get('/', authenticateToken, async (req, res) => {
 router.put('/presence', authenticateToken, async (req, res) => {
   try {
     const { status, status_text } = req.body;
+    const finalStatus = status || 'online';
     await db.query(
       `INSERT INTO user_presence (user_id, status, status_text, last_seen, updated_at)
        VALUES ($1, $2, $3, NOW(), NOW())
        ON CONFLICT (user_id) DO UPDATE SET status = $2, status_text = $3, last_seen = NOW(), updated_at = NOW()`,
-      [req.user.id, status || 'online', status_text || '']
+      [req.user.id, finalStatus, status_text || '']
     );
+
+    // Broadcast presence change to all users in the same org
+    try {
+      const { broadcastToTenant } = require('../ws');
+      broadcastToTenant(req.user.tenant_id, {
+        event: 'presenceChange',
+        userId: req.user.id,
+        status: finalStatus,
+        statusText: status_text || '',
+      }, req.user.id);
+    } catch {}
+
     res.json({ success: true });
   } catch (err) {
     console.error('Presence error:', err);

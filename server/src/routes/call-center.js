@@ -131,6 +131,17 @@ router.put('/status', authenticateToken, async (req, res) => {
       [req.user.id, mappedPresence, `Call center: ${status}`]
     ).catch(() => {});
 
+    // Broadcast presence change to other users in the org
+    try {
+      const { broadcastToTenant } = require('../ws');
+      broadcastToTenant(req.user.tenant_id, {
+        event: 'presenceChange',
+        userId: req.user.id,
+        status: mappedPresence,
+        statusText: `Call center: ${status}`,
+      }, req.user.id);
+    } catch {}
+
     res.json({ success: true, status, fsSynced });
   } catch (err) {
     console.error('Call center status update error:', err);

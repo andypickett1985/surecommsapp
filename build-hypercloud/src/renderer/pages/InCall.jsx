@@ -138,6 +138,7 @@ export default function InCall() {
     setLiveText('');
     setFullTranscript('');
     setShowTranscript(true);
+    localStorage.setItem('scv_active_transcript', 'true');
     const callerName = callState?.name || callState?.number || 'Other';
     await ipc.transcriptionStart({ callerName, userName: 'You' });
   }

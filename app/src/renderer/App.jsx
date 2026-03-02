@@ -18,15 +18,24 @@ import Settings from './pages/Settings';
 import PostCallReview from './pages/PostCallReview';
 
 export default function App() {
-  const { view, section, callState, incomingCall, showSettings, postCallTranscript } = useStore();
+  const { view, section, callState, incomingCall, showSettings, postCallTranscript, updateAvailable } = useStore();
 
   useEffect(() => {
     ipc.onSipEvent((data) => {
       switch (data.event) {
         case 'regState': setState({ regStatus: { code: data.code, reason: data.reason || '' } }); break;
         case 'callState':
-          if (data.state === 'disconnected') { addCallToHistory(data); setState({ callState: null, postCallTranscript: { number: cleanSipUri(data.number), name: cleanSipUri(data.name), direction: data.direction } }); }
-          else setState({ callState: data });
+          if (data.state === 'disconnected') {
+            addCallToHistory(data);
+            const hadTranscript = !!localStorage.getItem('scv_active_transcript');
+            setState({
+              callState: null,
+              postCallTranscript: hadTranscript ? { number: cleanSipUri(data.number), name: cleanSipUri(data.name), direction: data.direction } : null,
+            });
+            localStorage.removeItem('scv_active_transcript');
+          } else {
+            setState({ callState: data });
+          }
           break;
         case 'incomingCall': setState({ incomingCall: data }); break;
         case 'engineStopped': setState({ regStatus: { code: -1, reason: 'Engine stopped' } }); break;
@@ -64,6 +73,9 @@ export default function App() {
           break;
         case 'pushConfig':
           if (data.settings) setState({ orgSettings: data.settings });
+          break;
+        case 'requestNetworkTest':
+          runRemoteNetworkTest();
           break;
       }
     });
@@ -144,6 +156,44 @@ export default function App() {
     return m ? m[1] : raw.replace(/^["']|["']$/g, '').trim();
   }
 
+  async function runRemoteNetworkTest() {
+    try {
+      const r = {};
+      const PROV = 'https://appmanager.hyperclouduk.com';
+      // Latency
+      const times = [];
+      for (let i = 0; i < 5; i++) {
+        const t0 = performance.now();
+        await fetch(PROV + '/api/health', { cache: 'no-store' });
+        times.push(Math.round(performance.now() - t0));
+      }
+      r.latency = { min: Math.min(...times), max: Math.max(...times), avg: Math.round(times.reduce((a, b) => a + b, 0) / times.length) };
+      // Download
+      try {
+        const t0 = performance.now();
+        const res = await fetch(PROV + '/speedtest.bin?r=' + Date.now(), { cache: 'no-store' });
+        const blob = await res.blob();
+        const elapsed = (performance.now() - t0) / 1000;
+        r.download = { mbps: parseFloat(((blob.size / (1024 * 1024)) / elapsed * 8).toFixed(1)) };
+      } catch { r.download = { error: 'failed' }; }
+      // NAT
+      try {
+        const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+        const candidates = [];
+        pc.createDataChannel('test');
+        pc.onicecandidate = (e) => { if (e.candidate) candidates.push(e.candidate.candidate); };
+        await pc.createOffer().then(o => pc.setLocalDescription(o));
+        await new Promise(res => setTimeout(res, 3000));
+        pc.close();
+        r.nat = { type: candidates.some(c => c.includes('relay')) ? 'Symmetric' : candidates.some(c => c.includes('srflx')) ? 'NAT (OK)' : 'Open', candidates: candidates.length };
+      } catch { r.nat = { type: 'unknown' }; }
+      r.timestamp = new Date().toISOString();
+      r.userAgent = navigator.userAgent;
+      localStorage.setItem('scv_last_nettest', JSON.stringify(r));
+      window.electronAPI?.uploadNetworkTestResults?.(r);
+    } catch {}
+  }
+
   function addCallToHistory(data) {
     setState(prev => {
       const entry = { name: cleanSipUri(data.name || ''), number: cleanSipUri(data.number || ''), direction: data.direction || 'out', duration: data.duration || 0, timestamp: new Date().toISOString() };
@@ -166,22 +216,66 @@ export default function App() {
     callcenter: <CallCenterAdmin />,
   };
 
-  return (
-    <div className="flex h-screen bg-white relative select-none">
-      {/* Sidebar nav */}
-      <Sidebar />
+  function openUpdateUrl() {
+    if (updateAvailable?.downloadUrl) {
+      const url = updateAvailable.downloadUrl.startsWith('http') ? updateAvailable.downloadUrl : `https://appmanager.hyperclouduk.com${updateAvailable.downloadUrl}`;
+      window.open(url, '_blank');
+    }
+  }
 
-      {/* Left column - switches based on active section */}
-      <div className="w-80 flex flex-col min-h-0 border-r border-gray-200 bg-white shrink-0">
-        <TopBar />
-        <div className="flex-1 overflow-hidden flex flex-col">
-          {leftPanels[section] || <SpeedDial />}
+  // Force update blocks the app
+  if (updateAvailable?.force) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-navy text-white">
+        <div className="text-center max-w-md p-8">
+          <div className="w-16 h-16 rounded-2xl bg-blue-500/20 flex items-center justify-center mx-auto mb-6">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-blue-400"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          </div>
+          <h2 className="text-xl font-bold mb-2">Update Required</h2>
+          <p className="text-white/60 text-sm mb-1">Version {updateAvailable.version} is available</p>
+          <p className="text-white/40 text-xs mb-6">This update is required to continue using the app.</p>
+          <button onClick={openUpdateUrl}
+            className="px-8 py-3 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl transition-colors">
+            Download Update
+          </button>
         </div>
       </div>
+    );
+  }
 
-      {/* Right column - persistent detail/context panel */}
-      <div className="flex-1 flex flex-col min-h-0 min-w-0 bg-gray-50">
-        <DetailPanel />
+  return (
+    <div className="flex flex-col h-screen bg-white relative select-none">
+      {/* Update banner */}
+      {updateAvailable && !updateAvailable.force && (
+        <div className="h-8 bg-blue-600 flex items-center justify-center gap-3 px-4 shrink-0">
+          <span className="text-white text-xs">Version {updateAvailable.version} is available</span>
+          <button onClick={openUpdateUrl}
+            className="px-3 py-0.5 bg-white text-blue-600 text-xs font-semibold rounded-md hover:bg-blue-50 transition-colors">
+            Download
+          </button>
+          <button onClick={() => setState({ updateAvailable: null })}
+            className="text-white/60 hover:text-white ml-1">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      )}
+
+      <div className="flex flex-1 min-h-0">
+        {/* Sidebar nav */}
+        <Sidebar />
+
+        {/* Left column - switches based on active section */}
+        <div className="w-80 flex flex-col min-h-0 border-r border-gray-200 bg-white shrink-0">
+          <TopBar />
+          <div className="flex-1 overflow-hidden flex flex-col">
+            {leftPanels[section] || <SpeedDial />}
+          </div>
+        </div>
+
+        {/* Right column - persistent detail/context panel */}
+        <div className="flex-1 flex flex-col min-h-0 min-w-0 bg-gray-50">
+          <DetailPanel />
+        </div>
       </div>
 
       {/* Overlays */}

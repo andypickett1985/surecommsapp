@@ -25,8 +25,17 @@ export default function App() {
       switch (data.event) {
         case 'regState': setState({ regStatus: { code: data.code, reason: data.reason || '' } }); break;
         case 'callState':
-          if (data.state === 'disconnected') { addCallToHistory(data); setState({ callState: null, postCallTranscript: { number: cleanSipUri(data.number), name: cleanSipUri(data.name), direction: data.direction } }); }
-          else setState({ callState: data });
+          if (data.state === 'disconnected') {
+            addCallToHistory(data);
+            const hadTranscript = !!localStorage.getItem('scv_active_transcript');
+            setState({
+              callState: null,
+              postCallTranscript: hadTranscript ? { number: cleanSipUri(data.number), name: cleanSipUri(data.name), direction: data.direction } : null,
+            });
+            localStorage.removeItem('scv_active_transcript');
+          } else {
+            setState({ callState: data });
+          }
           break;
         case 'incomingCall': setState({ incomingCall: data }); break;
         case 'engineStopped': setState({ regStatus: { code: -1, reason: 'Engine stopped' } }); break;

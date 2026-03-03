@@ -916,10 +916,6 @@ function CheckForUpdates() {
   const [progress, setProgress] = useState(null);
   const appVersion = '1.6.0';
 
-  useEffect(() => {
-    window.electronAPI?.onUpdateProgress?.((data) => setProgress(data));
-  }, []);
-
   async function check() {
     setChecking(true);
     setResult(null);
@@ -984,5 +980,3 @@ function CheckForUpdates() {
     </div>
   );
 }
-
-

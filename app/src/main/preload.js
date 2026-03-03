@@ -21,10 +21,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   warmTransferCancel: () => ipcRenderer.invoke('sip:warmTransferCancel'),
 
   onSipEvent: (callback) => {
+    ipcRenderer.removeAllListeners('sip:event');
     ipcRenderer.on('sip:event', (_, data) => callback(data));
   },
 
   onWsEvent: (callback) => {
+    ipcRenderer.removeAllListeners('ws:event');
     ipcRenderer.on('ws:event', (_, data) => callback(data));
   },
 
@@ -33,9 +35,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   transcriptionStop: () => ipcRenderer.invoke('transcription:stop'),
   transcriptionGetTranscript: () => ipcRenderer.invoke('transcription:getTranscript'),
   onTranscriptionUpdate: (callback) => {
+    ipcRenderer.removeAllListeners('transcription:update');
     ipcRenderer.on('transcription:update', (_, data) => callback(data));
   },
   onTranscriptionStatus: (callback) => {
+    ipcRenderer.removeAllListeners('transcription:status');
     ipcRenderer.on('transcription:status', (_, data) => callback(data));
   },
 
@@ -44,6 +48,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   downloadAndInstall: (url) => ipcRenderer.invoke('app:downloadAndInstall', { downloadUrl: url }),
   onUpdateProgress: (callback) => {
+    ipcRenderer.removeAllListeners('update:progress');
     ipcRenderer.on('update:progress', (_, data) => callback(data));
   },
 

@@ -220,9 +220,8 @@ export default function App() {
   const [updateProgress, setUpdateProgress] = useState(null);
 
   useEffect(() => {
-    window.electronAPI?.onUpdateProgress?.((data) => {
-      setUpdateProgress(data);
-    });
+    const handler = (data) => setUpdateProgress(data);
+    window.electronAPI?.onUpdateProgress?.(handler);
   }, []);
 
   function doUpdateNow() {

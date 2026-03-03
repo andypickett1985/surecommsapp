@@ -1,6 +1,6 @@
 {
   "name": "hypercloud",
-  "version": "1.6.9",
+  "version": "1.7.0",
   "description": "Hypercloud Desktop App",
   "main": "src/main/index.js",
   "scripts": {

@@ -204,6 +204,13 @@ export default function App() {
     });
   }
 
+  const [updateProgress, setUpdateProgress] = useState(null);
+
+  useEffect(() => {
+    const handler = (data) => setUpdateProgress(data);
+    window.electronAPI?.onUpdateProgress?.(handler);
+  }, []);
+
   if (view === 'loading') return <div className="flex items-center justify-center h-screen bg-navy"><div className="text-white/40 text-sm">Loading...</div></div>;
   if (view === 'login') return <Login onSuccess={(data) => { setState({ view: 'main', user: data.user, token: data.token, sipAccounts: data.sipAccounts }); startSip(data.sipAccounts); loadData(data.token); }} />;
 
@@ -216,13 +223,6 @@ export default function App() {
     keypad: <KeypadPanel />,
     callcenter: <CallCenterAdmin />,
   };
-
-  const [updateProgress, setUpdateProgress] = useState(null);
-
-  useEffect(() => {
-    const handler = (data) => setUpdateProgress(data);
-    window.electronAPI?.onUpdateProgress?.(handler);
-  }, []);
 
   function doUpdateNow() {
     if (!updateAvailable?.downloadUrl) return;

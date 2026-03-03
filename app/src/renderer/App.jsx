@@ -159,7 +159,7 @@ export default function App() {
   async function runRemoteNetworkTest() {
     try {
       const r = {};
-      const PROV = 'https://appmanager.hyperclouduk.com';
+      const PROV = 'https://communicator.surecloudvoice.com';
       // Latency
       const times = [];
       for (let i = 0; i < 5; i++) {
@@ -311,3 +311,4 @@ export default function App() {
     </div>
   );
 }
+

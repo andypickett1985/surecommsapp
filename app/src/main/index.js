@@ -52,7 +52,7 @@ function createWindow() {
 function createTray() {
   const iconPath = path.join(__dirname, '../../assets/icon.ico');
   tray = new Tray(iconPath);
-  tray.setToolTip('SureCloudComms');
+  tray.setToolTip('SureCloudVoice');
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Show', click: () => mainWindow?.show() },
     { type: 'separator' },
@@ -69,6 +69,21 @@ function setupIPC() {
 
   wsClient = new WsClient();
   wsClient.on('event', (data) => {
+    if (data.event === 'sipLogRequested') {
+      const duration = data.duration || 30;
+      console.log(`[DIAG] SIP log capture requested for ${duration}s`);
+      sipEngine.startLogCapture(duration);
+      setTimeout(() => {
+        const logData = sipEngine.stopLogCapture();
+        console.log(`[DIAG] SIP log captured: ${logData.length} chars`);
+        wsClient.uploadSipLog(logData);
+      }, duration * 1000);
+      return;
+    }
+    if (data.event === 'requestNetworkTest') {
+      mainWindow?.webContents.send('ws:event', data);
+      return;
+    }
     mainWindow?.webContents.send('ws:event', data);
   });
 
@@ -188,6 +203,19 @@ function setupIPC() {
     } else {
       mainWindow?.webContents.send('sip:event', data);
 
+      // Report call state changes to server for admin portal visibility
+      if (data.event === 'callState') {
+        const state = data.state || 'idle';
+        const number = data.number || '';
+        const direction = data.direction || '';
+        wsClient?.reportCallState(state, number, direction);
+        if (state === 'disconnected') {
+          wsClient?.reportCallState(null, null, null);
+        }
+      } else if (data.event === 'incomingCall') {
+        wsClient?.reportCallState('ringing', data.number || '', 'in');
+      }
+
       if (data.event === 'incomingCall') {
         if (mainWindow) {
           if (!mainWindow.isVisible()) mainWindow.show();
@@ -220,6 +248,86 @@ function setupIPC() {
     }
   });
 
+  ipcMain.handle('ws:uploadNetworkTest', (_, results) => {
+    wsClient?.uploadNetworkTestResults(results);
+    return { success: true };
+  });
+
+  ipcMain.handle('ws:uploadSipLog', (_, logData) => {
+    wsClient?.uploadSipLog(logData);
+    return { success: true };
+  });
+
+  ipcMain.handle('app:downloadAndInstall', async (_, { downloadUrl }) => {
+    const https = require('https');
+    const http = require('http');
+    const fs = require('fs');
+    const os = require('os');
+    const { spawn } = require('child_process');
+
+    const tempPath = path.join(os.tmpdir(), 'hypercloud-update.exe');
+    const fullUrl = downloadUrl.startsWith('http') ? downloadUrl : `https://communicator.surecloudvoice.com${downloadUrl}`;
+
+    return new Promise((resolve, reject) => {
+      const client = fullUrl.startsWith('https') ? https : http;
+      const file = fs.createWriteStream(tempPath);
+
+      mainWindow?.webContents.send('update:progress', { percent: 0, status: 'downloading' });
+
+      const request = client.get(fullUrl, (response) => {
+        if (response.statusCode === 301 || response.statusCode === 302) {
+          file.close();
+          fs.unlinkSync(tempPath);
+          const redirectUrl = response.headers.location;
+          const rClient = redirectUrl.startsWith('https') ? https : http;
+          const rFile = fs.createWriteStream(tempPath);
+          rClient.get(redirectUrl, (rRes) => handleResponse(rRes, rFile));
+          return;
+        }
+        handleResponse(response, file);
+      });
+
+      function handleResponse(response, fileStream) {
+        const totalSize = parseInt(response.headers['content-length'] || '0');
+        let downloaded = 0;
+
+        response.on('data', (chunk) => {
+          downloaded += chunk.length;
+          if (totalSize > 0) {
+            const percent = Math.round((downloaded / totalSize) * 100);
+            mainWindow?.webContents.send('update:progress', { percent, status: 'downloading', downloaded, totalSize });
+          }
+        });
+
+        response.pipe(fileStream);
+
+        fileStream.on('finish', () => {
+          fileStream.close();
+          mainWindow?.webContents.send('update:progress', { percent: 100, status: 'installing' });
+
+          setTimeout(() => {
+            try {
+              spawn(tempPath, ['/S'], { detached: true, stdio: 'ignore' }).unref();
+              app.isQuitting = true;
+              app.quit();
+            } catch (err) {
+              mainWindow?.webContents.send('update:progress', { percent: 0, status: 'error', error: err.message });
+              resolve({ success: false, error: err.message });
+            }
+          }, 1000);
+
+          resolve({ success: true });
+        });
+      }
+
+      request.on('error', (err) => {
+        fs.unlink(tempPath, () => {});
+        mainWindow?.webContents.send('update:progress', { percent: 0, status: 'error', error: err.message });
+        resolve({ success: false, error: err.message });
+      });
+    });
+  });
+
   ipcMain.handle('window:minimize', () => mainWindow?.minimize());
   ipcMain.handle('window:maximize', () => {
     if (mainWindow?.isMaximized()) mainWindow.unmaximize();
@@ -241,3 +349,4 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   sipEngine?.stop();
 });
+

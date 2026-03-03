@@ -9,6 +9,23 @@ class SipEngine extends EventEmitter {
     this.process = null;
     this.running = false;
     this.buffer = '';
+    this.logCapture = null;
+    this.logCaptureTimer = null;
+  }
+
+  startLogCapture(durationSec) {
+    this.logCapture = [];
+    if (this.logCaptureTimer) clearTimeout(this.logCaptureTimer);
+    this.logCaptureTimer = setTimeout(() => this.stopLogCapture(), (durationSec || 30) * 1000);
+    this.sendCommand({ cmd: 'enableLogging', level: 5 });
+  }
+
+  stopLogCapture() {
+    if (this.logCaptureTimer) { clearTimeout(this.logCaptureTimer); this.logCaptureTimer = null; }
+    this.sendCommand({ cmd: 'enableLogging', level: 0 });
+    const logData = (this.logCapture || []).join('\n');
+    this.logCapture = null;
+    return logData;
   }
 
   start(config) {
@@ -43,13 +60,16 @@ class SipEngine extends EventEmitter {
               }
             } catch (e) {
               console.log('[SIP RAW]', line.trim().substring(0, 100));
+              if (this.logCapture) this.logCapture.push(line.trim());
             }
           }
         }
       });
 
       this.process.stderr.on('data', (data) => {
-        console.error('[SIP STDERR]', data.toString().substring(0, 200));
+        const txt = data.toString();
+        console.error('[SIP STDERR]', txt.substring(0, 200));
+        if (this.logCapture) this.logCapture.push(txt);
       });
 
       this.process.on('exit', (code) => {

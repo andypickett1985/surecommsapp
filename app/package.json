@@ -1,6 +1,6 @@
 {
   "name": "surecloudcomms",
-  "version": "1.0.0",
+  "version": "1.6.0",
   "description": "SureCloudComms Softphone",
   "main": "src/main/index.js",
   "scripts": {
@@ -62,3 +62,4 @@
     "wait-on": "^8.0.0"
   }
 }
+

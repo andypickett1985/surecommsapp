@@ -228,7 +228,7 @@ export default function Settings() {
           {/* Profile */}
           <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
             <div className="relative group cursor-pointer" onClick={() => avatarInputRef.current?.click()}>
-              <Avatar name={user?.displayName || user?.email} size="lg" presence="online" image={avatarUrl ? `https://appmanager.hyperclouduk.com${avatarUrl}` : undefined} />
+              <Avatar name={user?.displayName || user?.email} size="lg" presence="online" image={avatarUrl ? `https://communicator.surecloudvoice.com${avatarUrl}` : undefined} />
               <div className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
               </div>
@@ -454,7 +454,7 @@ export default function Settings() {
                   </button>
                   {showDebugLog && (
                     <div className="px-3 py-2 bg-gray-900 rounded-lg text-[10px] font-mono text-green-400 max-h-40 overflow-y-auto space-y-0.5">
-                      <div>App: SureCloudVoice v1.5.0</div>
+                      <div>App: SureCloudVoice v1.6.0</div>
                       <div>SIP: {regStatus.code === 200 ? 'Registered' : `Error ${regStatus.code}`} {regStatus.reason}</div>
                       <div>Server: {account?.server || 'none'}</div>
                       <div>Ext: {account?.username || 'none'}</div>
@@ -479,8 +479,9 @@ export default function Settings() {
 
           <section>
             <h3 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">About</h3>
-            <p className="text-sm text-gray-500">SureCloudVoice v1.5.0</p>
+            <p className="text-sm text-gray-500">SureCloudVoice v1.6.0</p>
             <p className="text-xs text-gray-400 mt-1">Powered by Sure by Beyon</p>
+            <CheckForUpdates />
           </section>
         </div>
 
@@ -906,3 +907,82 @@ function CallerIdSelector() {
     </section>
   );
 }
+
+function CheckForUpdates() {
+  const { updateAvailable } = useStore();
+  const [checking, setChecking] = useState(false);
+  const [result, setResult] = useState(null);
+  const [updating, setUpdating] = useState(false);
+  const [progress, setProgress] = useState(null);
+  const appVersion = '1.6.0';
+
+  useEffect(() => {
+    window.electronAPI?.onUpdateProgress?.((data) => setProgress(data));
+  }, []);
+
+  async function check() {
+    setChecking(true);
+    setResult(null);
+    try {
+      const versions = await ipc.checkForUpdates();
+      const latest = versions?.[0];
+      if (latest && latest.version !== appVersion) {
+        setState({ updateAvailable: { version: latest.version, downloadUrl: latest.download_url, force: latest.force_update } });
+        setResult({ update: true, version: latest.version });
+      } else {
+        setResult({ update: false });
+      }
+    } catch { setResult({ error: true }); }
+    setChecking(false);
+  }
+
+  function doUpdate() {
+    if (!updateAvailable?.downloadUrl) return;
+    setUpdating(true);
+    setProgress({ percent: 0, status: 'downloading' });
+    window.electronAPI?.downloadAndInstall?.(updateAvailable.downloadUrl);
+  }
+
+  return (
+    <div className="mt-3">
+      {updating || progress ? (
+        <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+            <span className="text-xs font-medium text-blue-700">
+              {progress?.status === 'installing' ? 'Installing... app will restart' : `Downloading update ${progress?.percent || 0}%`}
+            </span>
+          </div>
+          <div className="h-1.5 bg-blue-200 rounded-full overflow-hidden">
+            <div className="h-full bg-blue-500 rounded-full transition-all duration-300" style={{ width: `${progress?.percent || 0}%` }} />
+          </div>
+        </div>
+      ) : updateAvailable ? (
+        <div className="flex items-center gap-2 p-2.5 bg-blue-50 border border-blue-200 rounded-lg">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-blue-500 shrink-0"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <div className="flex-1">
+            <div className="text-xs font-medium text-blue-700">Version {updateAvailable.version} available</div>
+          </div>
+          <button onClick={doUpdate} className="px-3 py-1 text-xs font-semibold bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors">
+            Update Now
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <button onClick={check} disabled={checking}
+            className="px-3 py-1.5 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors disabled:opacity-50">
+            {checking ? 'Checking...' : 'Check for Updates'}
+          </button>
+          {result && !result.update && !result.error && (
+            <span className="text-[11px] text-green-600">You're up to date</span>
+          )}
+          {result?.error && (
+            <span className="text-[11px] text-red-500">Check failed</span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+

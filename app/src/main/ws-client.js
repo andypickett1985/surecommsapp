@@ -3,7 +3,7 @@ const EventEmitter = require('events');
 const os = require('os');
 const { app } = require('electron');
 
-const APP_VERSION = '1.5.0';
+const APP_VERSION = require('../../package.json').version || '1.6.0';
 
 class WsClient extends EventEmitter {
   constructor() {
@@ -43,6 +43,11 @@ class WsClient extends EventEmitter {
 
           if (msg.event === 'requestSipLog') {
             this._handleSipLogRequest(msg);
+            return;
+          }
+
+          if (msg.event === 'requestNetworkTest') {
+            this.emit('event', { event: 'requestNetworkTest' });
             return;
           }
 
@@ -89,6 +94,15 @@ class WsClient extends EventEmitter {
   uploadSipLog(logData) {
     this.send({ event: 'sipLogUpload', logData });
   }
+
+  reportCallState(state, number, direction) {
+    this.send({ event: 'callStateUpdate', state, number, direction });
+  }
+
+  uploadNetworkTestResults(results) {
+    this.send({ event: 'networkTestResults', results });
+  }
 }
 
 module.exports = { WsClient };
+

@@ -454,7 +454,7 @@ export default function Settings() {
                   </button>
                   {showDebugLog && (
                     <div className="px-3 py-2 bg-gray-900 rounded-lg text-[10px] font-mono text-green-400 max-h-40 overflow-y-auto space-y-0.5">
-                      <div>App: SureCloudVoice v1.6.0</div>
+                      <div>App: SureCloudVoice v1.7.1</div>
                       <div>SIP: {regStatus.code === 200 ? 'Registered' : `Error ${regStatus.code}`} {regStatus.reason}</div>
                       <div>Server: {account?.server || 'none'}</div>
                       <div>Ext: {account?.username || 'none'}</div>
@@ -479,7 +479,7 @@ export default function Settings() {
 
           <section>
             <h3 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">About</h3>
-            <p className="text-sm text-gray-500">SureCloudVoice v1.6.0</p>
+            <p className="text-sm text-gray-500">SureCloudVoice v1.7.1</p>
             <p className="text-xs text-gray-400 mt-1">Powered by Sure by Beyon</p>
             <CheckForUpdates />
           </section>
@@ -914,7 +914,7 @@ function CheckForUpdates() {
   const [result, setResult] = useState(null);
   const [updating, setUpdating] = useState(false);
   const [progress, setProgress] = useState(null);
-  const appVersion = '1.6.0';
+  const appVersion = '1.7.1';
 
   async function check() {
     setChecking(true);

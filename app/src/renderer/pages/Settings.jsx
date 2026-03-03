@@ -460,7 +460,7 @@ export default function Settings() {
                       <div>Ext: {account?.username || 'none'}</div>
                       <div>Transport: {account?.transport || 'udp'}</div>
                       <div>User ID: {user?.id?.slice(0,8) || '?'}</div>
-                      <div>Token: {useStore().token?.slice(0,20) || 'none'}...</div>
+                      <div>Token: (hidden)</div>
                       <div>Speaker: {selectedSpeaker}</div>
                       <div>Mic: {selectedMic}</div>
                       <div>Debug: {debugMode ? 'ON' : 'OFF'}</div>

@@ -15,6 +15,7 @@ export const toggleMute = (m) => api.toggleMute?.(m);
 export const toggleHold = (h) => api.toggleHold?.(h);
 export const sendDtmf = (d) => api.sendDtmf?.(d);
 export const transfer = (n) => api.transfer?.(n);
+export const fetchTransferDestinations = () => apiFetch('/api/call-center/transfer-destinations');
 export const warmTransferCall = (n) => api.warmTransferCall?.(n);
 export const warmTransferComplete = () => api.warmTransferComplete?.();
 export const warmTransferCancel = () => api.warmTransferCancel?.();
@@ -104,4 +105,3 @@ export const checkForUpdates = () => apiFetch('/api/app/versions');
 export const maskRecording = () => apiFetch('/api/call-center/recording/mask', { method: 'POST' });
 export const unmaskRecording = () => apiFetch('/api/call-center/recording/unmask', { method: 'POST' });
 export const updatePresence = (status) => apiFetch('/api/users/presence', { method: 'PUT', body: JSON.stringify({ status }) });
-

@@ -592,5 +592,49 @@ router.post('/recording/unmask', authenticateToken, async (req, res) => {
   }
 });
 
+// ---- Transfer Destinations: Ring Groups + Call Center Queues ----
+
+router.get('/transfer-destinations', authenticateToken, async (req, res) => {
+  try {
+    const domainUuid = await getUserDomainUuid(req.user.id);
+    if (!domainUuid) return res.json({ ringGroups: [], callCenterQueues: [] });
+
+    const [rgResult, ccResult] = await Promise.all([
+      fpbx.query(
+        `SELECT ring_group_uuid, ring_group_name, ring_group_extension, ring_group_strategy
+         FROM v_ring_groups
+         WHERE domain_uuid = $1 AND ring_group_enabled = 'true'
+         ORDER BY ring_group_name`,
+        [domainUuid]
+      ),
+      fpbx.query(
+        `SELECT call_center_queue_uuid, queue_name, queue_extension, queue_strategy
+         FROM v_call_center_queues
+         WHERE domain_uuid = $1
+         ORDER BY queue_name`,
+        [domainUuid]
+      ),
+    ]);
+
+    res.json({
+      ringGroups: rgResult.rows.map(r => ({
+        id: r.ring_group_uuid,
+        name: r.ring_group_name,
+        extension: r.ring_group_extension,
+        strategy: r.ring_group_strategy,
+      })),
+      callCenterQueues: ccResult.rows.map(q => ({
+        id: q.call_center_queue_uuid,
+        name: q.queue_name,
+        extension: q.queue_extension,
+        strategy: q.queue_strategy,
+      })),
+    });
+  } catch (err) {
+    console.error('Transfer destinations error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
 

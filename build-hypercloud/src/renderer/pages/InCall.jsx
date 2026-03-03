@@ -93,44 +93,41 @@ export default function InCall() {
     setTransferring(false);
   }
 
+  const [transferDests, setTransferDests] = useState({ ringGroups: [], callCenterQueues: [] });
+
+  useEffect(() => {
+    if (showTransferPanel) {
+      ipc.fetchTransferDestinations().then(d => setTransferDests(d || { ringGroups: [], callCenterQueues: [] })).catch(() => {});
+    }
+  }, [showTransferPanel]);
+
   const localContacts = JSON.parse(localStorage.getItem('scv_local_contacts') || '[]');
-  const transferCandidates = [
-    ...users
-      .filter(u => u.id !== user?.id)
-      .map(u => ({
-        id: `user-${u.id}`,
-        kind: 'user',
-        name: u.display_name || u.email || 'User',
-        number: u.extension || u.sip_username || '',
-        subtitle: u.email || '',
-        presence: (presence?.[u.id] || u.presence || 'offline').toLowerCase(),
-      }))
-      .filter(c => c.number),
-    ...contacts
-      .map(c => ({
-        id: `contact-${c.id}`,
-        kind: 'contact',
-        name: c.name || 'Contact',
-        number: c.number || c.phones?.[0]?.number || '',
-        subtitle: c.organization || c.source || '',
-        presence: 'unknown',
-      }))
-      .filter(c => c.number),
-    ...localContacts
-      .map(c => ({
-        id: `local-${c.id}`,
-        kind: 'local',
-        name: c.name || 'Local contact',
-        number: c.number || '',
-        subtitle: c.organization || 'Local',
-        presence: 'unknown',
-      }))
-      .filter(c => c.number),
+  const allCandidates = [
+    ...users.filter(u => u.id !== user?.id).map(u => ({
+      id: `user-${u.id}`, kind: 'user', name: u.display_name || u.email || 'User',
+      number: u.extension || u.sip_username || '', subtitle: u.email || '',
+      presence: (presence?.[u.id] || u.presence || 'offline').toLowerCase(),
+    })).filter(c => c.number),
+    ...(transferDests.callCenterQueues || []).map(q => ({
+      id: `cc-${q.id}`, kind: 'callcenter', name: q.name,
+      number: q.extension, subtitle: `Queue \u00B7 ${q.strategy}`, presence: 'unknown',
+    })),
+    ...(transferDests.ringGroups || []).map(rg => ({
+      id: `rg-${rg.id}`, kind: 'ringgroup', name: rg.name,
+      number: rg.extension, subtitle: `Ring Group \u00B7 ${rg.strategy}`, presence: 'unknown',
+    })),
+    ...contacts.map(c => ({
+      id: `contact-${c.id}`, kind: 'contact', name: c.name || 'Contact',
+      number: c.number || c.phones?.[0]?.number || '', subtitle: c.organization || c.source || '', presence: 'unknown',
+    })).filter(c => c.number),
+    ...localContacts.map(c => ({
+      id: `local-${c.id}`, kind: 'local', name: c.name || 'Local contact',
+      number: c.number || '', subtitle: c.organization || 'Local', presence: 'unknown',
+    })).filter(c => c.number),
   ];
   const filteredTransferCandidates = transferQuery.trim()
-    ? transferCandidates.filter(c =>
-        `${c.name} ${c.number} ${c.subtitle || ''}`.toLowerCase().includes(transferQuery.toLowerCase()))
-    : transferCandidates;
+    ? allCandidates.filter(c => `${c.name} ${c.number} ${c.subtitle || ''}`.toLowerCase().includes(transferQuery.toLowerCase()))
+    : allCandidates;
 
   function presenceBadge(p) {
     if (['in_call', 'on_call', 'busy'].includes(p)) {
@@ -353,29 +350,49 @@ export default function InCall() {
               {transferStatus && <div className="mt-2 text-[11px] text-blue-200">{transferStatus}</div>}
             </div>
 
-            <div className="max-h-72 overflow-y-auto">
+            <div className="max-h-80 overflow-y-auto">
               {filteredTransferCandidates.length === 0 ? (
-                <div className="px-4 py-6 text-xs text-white/45 text-center">No matching users/contacts</div>
-              ) : (
-                filteredTransferCandidates.map(c => (
-                  <button
-                    key={c.id}
-                    onClick={() => setTransferQuery(c.number)}
-                    className="w-full text-left px-4 py-2.5 border-b border-white/5 hover:bg-white/5 transition-colors"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="text-sm text-white">{c.name}</div>
-                      {c.kind === 'user' && (
-                        <div className={`inline-flex items-center gap-1 text-[10px] ${presenceBadge(c.presence).textClass}`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${presenceBadge(c.presence).dot}`} />
-                          {presenceBadge(c.presence).text}
-                        </div>
-                      )}
+                <div className="px-4 py-6 text-xs text-white/45 text-center">No matching results</div>
+              ) : (() => {
+                const groups = [
+                  { key: 'user', label: 'Users', color: 'bg-blue-500', items: filteredTransferCandidates.filter(c => c.kind === 'user') },
+                  { key: 'callcenter', label: 'Call Centers', color: 'bg-purple-500', items: filteredTransferCandidates.filter(c => c.kind === 'callcenter') },
+                  { key: 'ringgroup', label: 'Ring Groups', color: 'bg-amber-500', items: filteredTransferCandidates.filter(c => c.kind === 'ringgroup') },
+                  { key: 'contact', label: 'Contacts', color: 'bg-green-500', items: filteredTransferCandidates.filter(c => c.kind === 'contact' || c.kind === 'local') },
+                ];
+                return groups.filter(g => g.items.length > 0).map(g => (
+                  <div key={g.key}>
+                    <div className="px-4 py-1.5 bg-white/5 flex items-center gap-2 sticky top-0">
+                      <span className={`w-1.5 h-1.5 rounded-full ${g.color}`} />
+                      <span className="text-[10px] font-semibold text-white/50 uppercase tracking-wider">{g.label} ({g.items.length})</span>
                     </div>
-                    <div className="text-xs text-white/60">{c.number}{c.subtitle ? ` · ${c.subtitle}` : ''}</div>
-                  </button>
-                ))
-              )}
+                    {g.items.map(c => (
+                      <button key={c.id} onClick={() => setTransferQuery(c.number)}
+                        className="w-full text-left px-4 py-2 border-b border-white/5 hover:bg-white/5 transition-colors">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <div className="text-sm text-white">{c.name}</div>
+                            {c.kind !== 'user' && (
+                              <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${
+                                c.kind === 'callcenter' ? 'bg-purple-500/20 text-purple-300' :
+                                c.kind === 'ringgroup' ? 'bg-amber-500/20 text-amber-300' :
+                                'bg-green-500/20 text-green-300'
+                              }`}>{c.kind === 'callcenter' ? 'Queue' : c.kind === 'ringgroup' ? 'Group' : 'Contact'}</span>
+                            )}
+                          </div>
+                          {c.kind === 'user' && (
+                            <div className={`inline-flex items-center gap-1 text-[10px] ${presenceBadge(c.presence).textClass}`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${presenceBadge(c.presence).dot}`} />
+                              {presenceBadge(c.presence).text}
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-xs text-white/50">Ext {c.number}{c.subtitle ? ` \u00B7 ${c.subtitle}` : ''}</div>
+                      </button>
+                    ))}
+                  </div>
+                ));
+              })()}
             </div>
           </div>
         </div>

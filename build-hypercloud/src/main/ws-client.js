@@ -3,7 +3,7 @@ const EventEmitter = require('events');
 const os = require('os');
 const { app } = require('electron');
 
-const APP_VERSION = '1.5.1';
+const APP_VERSION = require('../../package.json').version || '1.6.0';
 
 class WsClient extends EventEmitter {
   constructor() {

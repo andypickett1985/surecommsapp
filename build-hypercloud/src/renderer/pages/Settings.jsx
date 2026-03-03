@@ -454,7 +454,7 @@ export default function Settings() {
                   </button>
                   {showDebugLog && (
                     <div className="px-3 py-2 bg-gray-900 rounded-lg text-[10px] font-mono text-green-400 max-h-40 overflow-y-auto space-y-0.5">
-                      <div>App: Hypercloud v1.5.1</div>
+                      <div>App: Hypercloud v1.6.0</div>
                       <div>SIP: {regStatus.code === 200 ? 'Registered' : `Error ${regStatus.code}`} {regStatus.reason}</div>
                       <div>Server: {account?.server || 'none'}</div>
                       <div>Ext: {account?.username || 'none'}</div>
@@ -479,7 +479,7 @@ export default function Settings() {
 
           <section>
             <h3 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">About</h3>
-            <p className="text-sm text-gray-500">Hypercloud v1.5.1</p>
+            <p className="text-sm text-gray-500">Hypercloud v1.6.0</p>
             <p className="text-xs text-gray-400 mt-1">Powered by Connection Technologies</p>
             <CheckForUpdates />
           </section>
@@ -912,6 +912,13 @@ function CheckForUpdates() {
   const { updateAvailable } = useStore();
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState(null);
+  const [updating, setUpdating] = useState(false);
+  const [progress, setProgress] = useState(null);
+  const appVersion = '1.6.0';
+
+  useEffect(() => {
+    window.electronAPI?.onUpdateProgress?.((data) => setProgress(data));
+  }, []);
 
   async function check() {
     setChecking(true);
@@ -919,7 +926,7 @@ function CheckForUpdates() {
     try {
       const versions = await ipc.checkForUpdates();
       const latest = versions?.[0];
-      if (latest && latest.version !== '1.5.1') {
+      if (latest && latest.version !== appVersion) {
         setState({ updateAvailable: { version: latest.version, downloadUrl: latest.download_url, force: latest.force_update } });
         setResult({ update: true, version: latest.version });
       } else {
@@ -929,23 +936,35 @@ function CheckForUpdates() {
     setChecking(false);
   }
 
-  function openDownload() {
-    if (updateAvailable?.downloadUrl) {
-      const url = updateAvailable.downloadUrl.startsWith('http') ? updateAvailable.downloadUrl : `https://appmanager.hyperclouduk.com${updateAvailable.downloadUrl}`;
-      window.open(url, '_blank');
-    }
+  function doUpdate() {
+    if (!updateAvailable?.downloadUrl) return;
+    setUpdating(true);
+    setProgress({ percent: 0, status: 'downloading' });
+    window.electronAPI?.downloadAndInstall?.(updateAvailable.downloadUrl);
   }
 
   return (
     <div className="mt-3">
-      {updateAvailable ? (
+      {updating || progress ? (
+        <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+            <span className="text-xs font-medium text-blue-700">
+              {progress?.status === 'installing' ? 'Installing... app will restart' : `Downloading update ${progress?.percent || 0}%`}
+            </span>
+          </div>
+          <div className="h-1.5 bg-blue-200 rounded-full overflow-hidden">
+            <div className="h-full bg-blue-500 rounded-full transition-all duration-300" style={{ width: `${progress?.percent || 0}%` }} />
+          </div>
+        </div>
+      ) : updateAvailable ? (
         <div className="flex items-center gap-2 p-2.5 bg-blue-50 border border-blue-200 rounded-lg">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-blue-500 shrink-0"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           <div className="flex-1">
             <div className="text-xs font-medium text-blue-700">Version {updateAvailable.version} available</div>
           </div>
-          <button onClick={openDownload} className="px-3 py-1 text-xs font-semibold bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors">
-            Download
+          <button onClick={doUpdate} className="px-3 py-1 text-xs font-semibold bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors">
+            Update Now
           </button>
         </div>
       ) : (

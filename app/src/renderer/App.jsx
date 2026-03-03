@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useStore, setState } from './lib/store';
 import * as ipc from './lib/ipc';
 import Login from './pages/Login';
@@ -216,14 +216,20 @@ export default function App() {
     callcenter: <CallCenterAdmin />,
   };
 
-  function openUpdateUrl() {
-    if (updateAvailable?.downloadUrl) {
-      const url = updateAvailable.downloadUrl.startsWith('http') ? updateAvailable.downloadUrl : `https://appmanager.hyperclouduk.com${updateAvailable.downloadUrl}`;
-      window.open(url, '_blank');
-    }
+  const [updateProgress, setUpdateProgress] = useState(null);
+
+  useEffect(() => {
+    window.electronAPI?.onUpdateProgress?.((data) => {
+      setUpdateProgress(data);
+    });
+  }, []);
+
+  function doUpdateNow() {
+    if (!updateAvailable?.downloadUrl) return;
+    setUpdateProgress({ percent: 0, status: 'downloading' });
+    window.electronAPI?.downloadAndInstall?.(updateAvailable.downloadUrl);
   }
 
-  // Force update blocks the app
   if (updateAvailable?.force) {
     return (
       <div className="flex items-center justify-center h-screen bg-navy text-white">
@@ -234,10 +240,18 @@ export default function App() {
           <h2 className="text-xl font-bold mb-2">Update Required</h2>
           <p className="text-white/60 text-sm mb-1">Version {updateAvailable.version} is available</p>
           <p className="text-white/40 text-xs mb-6">This update is required to continue using the app.</p>
-          <button onClick={openUpdateUrl}
-            className="px-8 py-3 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl transition-colors">
-            Download Update
-          </button>
+          {updateProgress ? (
+            <div className="w-64 mx-auto">
+              <div className="h-2 bg-white/20 rounded-full overflow-hidden mb-2">
+                <div className="h-full bg-blue-400 rounded-full transition-all duration-300" style={{ width: `${updateProgress.percent}%` }} />
+              </div>
+              <p className="text-white/50 text-xs">{updateProgress.status === 'installing' ? 'Installing... app will restart' : `Downloading ${updateProgress.percent}%`}</p>
+            </div>
+          ) : (
+            <button onClick={doUpdateNow} className="px-8 py-3 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl transition-colors">
+              Update Now
+            </button>
+          )}
         </div>
       </div>
     );
@@ -247,16 +261,27 @@ export default function App() {
     <div className="flex flex-col h-screen bg-white relative select-none">
       {/* Update banner */}
       {updateAvailable && !updateAvailable.force && (
-        <div className="h-8 bg-blue-600 flex items-center justify-center gap-3 px-4 shrink-0">
-          <span className="text-white text-xs">Version {updateAvailable.version} is available</span>
-          <button onClick={openUpdateUrl}
-            className="px-3 py-0.5 bg-white text-blue-600 text-xs font-semibold rounded-md hover:bg-blue-50 transition-colors">
-            Download
-          </button>
-          <button onClick={() => setState({ updateAvailable: null })}
-            className="text-white/60 hover:text-white ml-1">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          </button>
+        <div className="h-9 bg-blue-600 flex items-center justify-center gap-3 px-4 shrink-0">
+          {updateProgress ? (
+            <>
+              <div className="w-32 h-1.5 bg-white/20 rounded-full overflow-hidden">
+                <div className="h-full bg-white rounded-full transition-all duration-300" style={{ width: `${updateProgress.percent}%` }} />
+              </div>
+              <span className="text-white text-xs">{updateProgress.status === 'installing' ? 'Installing... restarting shortly' : `Downloading ${updateProgress.percent}%`}</span>
+            </>
+          ) : (
+            <>
+              <span className="text-white text-xs">Version {updateAvailable.version} is available</span>
+              <button onClick={doUpdateNow}
+                className="px-3 py-0.5 bg-white text-blue-600 text-xs font-semibold rounded-md hover:bg-blue-50 transition-colors">
+                Update Now
+              </button>
+              <button onClick={() => setState({ updateAvailable: null })}
+                className="text-white/60 hover:text-white ml-1">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </>
+          )}
         </div>
       )}
 

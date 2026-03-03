@@ -15,6 +15,9 @@ export const toggleMute = (m) => api.toggleMute?.(m);
 export const toggleHold = (h) => api.toggleHold?.(h);
 export const sendDtmf = (d) => api.sendDtmf?.(d);
 export const transfer = (n) => api.transfer?.(n);
+export const warmTransferCall = (n) => api.warmTransferCall?.(n);
+export const warmTransferComplete = () => api.warmTransferComplete?.();
+export const warmTransferCancel = () => api.warmTransferCancel?.();
 export const onSipEvent = (cb) => api.onSipEvent?.(cb);
 
 export const onWsEvent = (cb) => api.onWsEvent?.(cb);

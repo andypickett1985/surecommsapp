@@ -150,6 +150,18 @@ function setupIPC() {
     return sipEngine.sendCommand({ cmd: 'transfer', number });
   });
 
+  ipcMain.handle('sip:warmTransferCall', async (_, { number }) => {
+    return sipEngine.sendCommand({ cmd: 'warmTransferCall', number });
+  });
+
+  ipcMain.handle('sip:warmTransferComplete', async () => {
+    return sipEngine.sendCommand({ cmd: 'warmTransferComplete' });
+  });
+
+  ipcMain.handle('sip:warmTransferCancel', async () => {
+    return sipEngine.sendCommand({ cmd: 'warmTransferCancel' });
+  });
+
   // Transcription
   transcriptionService = new TranscriptionService();
   transcriptionService.on('transcript', (data) => {

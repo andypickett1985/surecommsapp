@@ -22,6 +22,8 @@ export default function InCall() {
   const [transferQuery, setTransferQuery] = useState('');
   const [transferStatus, setTransferStatus] = useState('');
   const [transferring, setTransferring] = useState(false);
+  const [warmTransferActive, setWarmTransferActive] = useState(false);
+  const [warmTransferTarget, setWarmTransferTarget] = useState('');
   const [recording, setRecording] = useState(true);
   const [maskActive, setMaskActive] = useState(false);
   const [showPrerecorded, setShowPrerecorded] = useState(false);
@@ -35,6 +37,28 @@ export default function InCall() {
     }
     return () => clearInterval(timerRef.current);
   }, [callState?.state]);
+
+  useEffect(() => {
+    ipc.onSipEvent((data) => {
+      if (data.event === 'warmTransferState') {
+        if (data.state === 'consulting') {
+          setWarmTransferActive(true);
+          setWarmTransferTarget(data.target || '');
+          setTransferStatus(`Calling ${data.target}...`);
+        } else if (data.state === 'completed') {
+          setWarmTransferActive(false);
+          setTransferStatus('Transfer completed');
+          setTimeout(() => setShowTransferPanel(false), 800);
+        } else if (data.state === 'cancelled') {
+          setWarmTransferActive(false);
+          setTransferStatus('Transfer cancelled');
+        } else if (data.state === 'failed') {
+          setWarmTransferActive(false);
+          setTransferStatus(data.reason || 'Transfer failed');
+        }
+      }
+    });
+  }, []);
 
   useEffect(() => {
     ipc.onTranscriptionUpdate((data) => {
@@ -290,21 +314,56 @@ export default function InCall() {
                 autoFocus
                 className="w-full px-3 py-2.5 rounded-lg bg-white/95 text-gray-900 text-sm outline-none"
               />
-              <div className="mt-2 flex gap-2">
-                <button
-                  onClick={() => doTransfer(transferQuery)}
-                  disabled={transferring || !transferQuery.trim()}
-                  className="px-3 py-1.5 text-xs rounded-md bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white font-medium"
-                >
-                  {transferring ? 'Transferring...' : 'Transfer'}
-                </button>
-                <button
-                  onClick={() => setShowTransferPanel(false)}
-                  className="px-3 py-1.5 text-xs rounded-md bg-white/10 hover:bg-white/15 text-white/80"
-                >
-                  Cancel
-                </button>
-              </div>
+              {warmTransferActive ? (
+                <div className="mt-2 space-y-2">
+                  <div className="flex items-center gap-2 p-2 bg-amber-500/20 rounded-lg">
+                    <div className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" />
+                    <span className="text-xs text-amber-200">Consulting with {warmTransferTarget}...</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => ipc.warmTransferComplete()}
+                      className="flex-1 px-3 py-2 text-xs rounded-md bg-green-500 hover:bg-green-600 text-white font-semibold"
+                    >
+                      Complete Transfer
+                    </button>
+                    <button
+                      onClick={() => ipc.warmTransferCancel()}
+                      className="flex-1 px-3 py-2 text-xs rounded-md bg-red-500/80 hover:bg-red-600 text-white font-medium"
+                    >
+                      Cancel &amp; Return
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-2 flex gap-2">
+                  <button
+                    onClick={() => doTransfer(transferQuery)}
+                    disabled={transferring || !transferQuery.trim()}
+                    className="px-3 py-1.5 text-xs rounded-md bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white font-medium"
+                    title="Blind transfer - immediately connects caller to target"
+                  >
+                    {transferring ? 'Transferring...' : 'Blind Transfer'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      const target = getTransferTarget(transferQuery);
+                      if (target) { setWarmTransferTarget(transferQuery); ipc.warmTransferCall(target); }
+                    }}
+                    disabled={transferring || !transferQuery.trim()}
+                    className="px-3 py-1.5 text-xs rounded-md bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-medium"
+                    title="Warm transfer - speak to target first, then connect"
+                  >
+                    Warm Transfer
+                  </button>
+                  <button
+                    onClick={() => setShowTransferPanel(false)}
+                    className="px-3 py-1.5 text-xs rounded-md bg-white/10 hover:bg-white/15 text-white/80"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
               {transferStatus && <div className="mt-2 text-[11px] text-blue-200">{transferStatus}</div>}
             </div>
 
@@ -315,7 +374,7 @@ export default function InCall() {
                 filteredTransferCandidates.map(c => (
                   <button
                     key={c.id}
-                    onClick={() => { setTransferQuery(c.number); doTransfer(c.number); }}
+                    onClick={() => setTransferQuery(c.number)}
                     className="w-full text-left px-4 py-2.5 border-b border-white/5 hover:bg-white/5 transition-colors"
                   >
                     <div className="flex items-center justify-between gap-2">

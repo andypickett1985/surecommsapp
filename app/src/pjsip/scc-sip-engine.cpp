@@ -13,6 +13,7 @@
 
 static pjsua_acc_id g_acc_id = PJSUA_INVALID_ID;
 static pjsua_call_id g_call_id = PJSUA_INVALID_ID;
+static pjsua_call_id g_consult_call_id = PJSUA_INVALID_ID;
 static int g_running = 1;
 static int g_audio_capture = 0;
 static pjmedia_port *g_capture_port = NULL;
@@ -147,7 +148,7 @@ static int init_pjsua() {
     ua_cfg.cb.on_call_state = &on_call_state;
     ua_cfg.cb.on_call_media_state = &on_call_media_state;
     ua_cfg.max_calls = 4;
-    ua_cfg.user_agent = pj_str("SureCloudVoice/1.0");
+    ua_cfg.user_agent = pj_str("Hypercloud/1.3");
 
     pjsua_logging_config log_cfg;
     pjsua_logging_config_default(&log_cfg);
@@ -327,6 +328,54 @@ static void handle_command(const char* line) {
             pj_str_t dest = pj_str(uri);
             pjsua_call_xfer(g_call_id, &dest, NULL);
         }
+    }
+    else if (strcmp(cmd, "warmTransferCall") == 0) {
+        json_str(line, "number", buf1, sizeof(buf1));
+        if (g_call_id != PJSUA_INVALID_ID && buf1[0]) {
+            // Hold the current call first
+            pjsua_call_set_hold(g_call_id, NULL);
+            // Make consultation call to the target
+            char uri[512];
+            pjsua_acc_info ai;
+            pjsua_acc_get_info(g_acc_id, &ai);
+            char domain[256] = {0};
+            const char* at = strchr(ai.acc_uri.ptr, '@');
+            if (at) {
+                const char* end = strchr(at, '>');
+                if (!end) end = ai.acc_uri.ptr + ai.acc_uri.slen;
+                int dlen = (int)(end - at - 1);
+                strncpy(domain, at + 1, dlen < 255 ? dlen : 255);
+            }
+            snprintf(uri, sizeof(uri), "sip:%s@%s", buf1, domain);
+            pj_str_t dest = pj_str(uri);
+            pj_status_t status = pjsua_call_make_call(g_acc_id, &dest, 0, NULL, NULL, &g_consult_call_id);
+            if (status == PJ_SUCCESS) {
+                emit("{\"event\":\"warmTransferState\",\"state\":\"consulting\",\"target\":\"%s\"}", buf1);
+            } else {
+                // Failed to make consultation call, unhold original
+                pjsua_call_reinvite(g_call_id, PJSUA_CALL_UNHOLD, NULL);
+                g_consult_call_id = PJSUA_INVALID_ID;
+                emit("{\"event\":\"warmTransferState\",\"state\":\"failed\",\"reason\":\"Could not call target\"}");
+            }
+        }
+    }
+    else if (strcmp(cmd, "warmTransferComplete") == 0) {
+        if (g_call_id != PJSUA_INVALID_ID && g_consult_call_id != PJSUA_INVALID_ID) {
+            pjsua_call_xfer_replaces(g_call_id, g_consult_call_id, PJSUA_XFER_NO_REQUIRE_REPLACES, NULL);
+            emit("{\"event\":\"warmTransferState\",\"state\":\"completed\"}");
+            g_consult_call_id = PJSUA_INVALID_ID;
+        }
+    }
+    else if (strcmp(cmd, "warmTransferCancel") == 0) {
+        if (g_consult_call_id != PJSUA_INVALID_ID) {
+            pjsua_call_hangup(g_consult_call_id, 0, NULL, NULL);
+            g_consult_call_id = PJSUA_INVALID_ID;
+        }
+        // Unhold the original call
+        if (g_call_id != PJSUA_INVALID_ID) {
+            pjsua_call_reinvite(g_call_id, PJSUA_CALL_UNHOLD, NULL);
+        }
+        emit("{\"event\":\"warmTransferState\",\"state\":\"cancelled\"}");
     }
     else if (strcmp(cmd, "enableAudioCapture") == 0) {
         g_audio_capture = json_bool(line, "enabled");

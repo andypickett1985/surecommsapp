@@ -16,6 +16,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   toggleHold: (held) => ipcRenderer.invoke('sip:toggleHold', { held }),
   sendDtmf: (digit) => ipcRenderer.invoke('sip:sendDtmf', { digit }),
   transfer: (number) => ipcRenderer.invoke('sip:transfer', { number }),
+  warmTransferCall: (number) => ipcRenderer.invoke('sip:warmTransferCall', { number }),
+  warmTransferComplete: () => ipcRenderer.invoke('sip:warmTransferComplete'),
+  warmTransferCancel: () => ipcRenderer.invoke('sip:warmTransferCancel'),
 
   onSipEvent: (callback) => {
     ipcRenderer.on('sip:event', (_, data) => callback(data));

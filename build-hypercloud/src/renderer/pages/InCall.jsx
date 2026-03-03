@@ -3,7 +3,7 @@ import { useStore, setState } from '../lib/store';
 import * as ipc from '../lib/ipc';
 
 export default function InCall() {
-  const { callState, users, contacts, user, sipAccounts, presence } = useStore();
+  const { callState, users, contacts, user, sipAccounts, presence, warmTransferState } = useStore();
   const [muted, setMuted] = useState(false);
   const [held, setHeld] = useState(false);
   const [seconds, setSeconds] = useState(0);
@@ -22,8 +22,16 @@ export default function InCall() {
   const [transferQuery, setTransferQuery] = useState('');
   const [transferStatus, setTransferStatus] = useState('');
   const [transferring, setTransferring] = useState(false);
-  const [warmTransferActive, setWarmTransferActive] = useState(false);
-  const [warmTransferTarget, setWarmTransferTarget] = useState('');
+  const warmTransferActive = warmTransferState?.state === 'consulting';
+  const warmTransferTarget = warmTransferState?.target || '';
+
+  useEffect(() => {
+    if (!warmTransferState) return;
+    if (warmTransferState.state === 'consulting') setTransferStatus(`Calling ${warmTransferState.target || ''}...`);
+    else if (warmTransferState.state === 'completed') { setTransferStatus('Transfer completed'); setTimeout(() => setShowTransferPanel(false), 800); }
+    else if (warmTransferState.state === 'cancelled') setTransferStatus('Transfer cancelled');
+    else if (warmTransferState.state === 'failed') setTransferStatus(warmTransferState.reason || 'Transfer failed');
+  }, [warmTransferState]);
   const [recording, setRecording] = useState(true);
   const [maskActive, setMaskActive] = useState(false);
   const [showPrerecorded, setShowPrerecorded] = useState(false);
@@ -37,28 +45,6 @@ export default function InCall() {
     }
     return () => clearInterval(timerRef.current);
   }, [callState?.state]);
-
-  useEffect(() => {
-    ipc.onSipEvent((data) => {
-      if (data.event === 'warmTransferState') {
-        if (data.state === 'consulting') {
-          setWarmTransferActive(true);
-          setWarmTransferTarget(data.target || '');
-          setTransferStatus(`Calling ${data.target}...`);
-        } else if (data.state === 'completed') {
-          setWarmTransferActive(false);
-          setTransferStatus('Transfer completed');
-          setTimeout(() => setShowTransferPanel(false), 800);
-        } else if (data.state === 'cancelled') {
-          setWarmTransferActive(false);
-          setTransferStatus('Transfer cancelled');
-        } else if (data.state === 'failed') {
-          setWarmTransferActive(false);
-          setTransferStatus(data.reason || 'Transfer failed');
-        }
-      }
-    });
-  }, []);
 
   useEffect(() => {
     ipc.onTranscriptionUpdate((data) => {

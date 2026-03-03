@@ -38,6 +38,7 @@ export default function App() {
           }
           break;
         case 'incomingCall': setState({ incomingCall: data }); break;
+        case 'warmTransferState': setState({ warmTransferState: data }); break;
         case 'engineStopped': setState({ regStatus: { code: -1, reason: 'Engine stopped' } }); break;
       }
     });

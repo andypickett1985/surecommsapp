@@ -35,6 +35,7 @@ let state = {
   },
   ccSelectedQueue: null,
   updateAvailable: null,
+  warmTransferState: null,
 };
 
 const listeners = new Set();

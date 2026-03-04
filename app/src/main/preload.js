@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  getAppVersion: () => ipcRenderer.sendSync('app:getVersion'),
   login: (email, password) => ipcRenderer.invoke('app:login', { email, password }),
   logout: () => ipcRenderer.invoke('app:logout'),
   getSavedSession: () => ipcRenderer.invoke('app:getSavedSession'),

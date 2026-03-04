@@ -87,10 +87,24 @@ function setupIPC() {
     mainWindow?.webContents.send('ws:event', data);
   });
 
+  ipcMain.on('app:getVersion', (event) => {
+    event.returnValue = app.getVersion();
+  });
+
   ipcMain.handle('app:login', async (_, { email, password }) => {
-    const result = await provisionClient.login(email, password);
-    if (result?.token) wsClient.connect(result.token);
-    return result;
+    const fs = require('fs');
+    const os = require('os');
+    const logFile = path.join(os.tmpdir(), 'hypercloud-login-debug.txt');
+    try {
+      fs.appendFileSync(logFile, `\n[${new Date().toISOString()}] Login attempt: ${email}\n`);
+      const result = await provisionClient.login(email, password);
+      fs.appendFileSync(logFile, `[${new Date().toISOString()}] Login OK: token=${!!result?.token}\n`);
+      if (result?.token) wsClient.connect(result.token);
+      return result;
+    } catch (err) {
+      fs.appendFileSync(logFile, `[${new Date().toISOString()}] Login FAILED: ${err.message} status=${err.status} stack=${err.stack}\n`);
+      return { error: err.message || 'Login failed', status: err.status };
+    }
   });
 
   ipcMain.handle('app:logout', async () => {
@@ -257,6 +271,27 @@ function setupIPC() {
           notif.show();
         }
       }
+
+      if (data.event === 'agentPing') {
+        if (mainWindow) {
+          mainWindow.flashFrame(true);
+          if (!mainWindow.isVisible()) mainWindow.show();
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.focus();
+        }
+        const { Notification } = require('electron');
+        if (Notification.isSupported()) {
+          const notif = new Notification({
+            title: 'Agent Ping',
+            body: data.message || `${data.from || 'Someone'} is trying to reach you`,
+            icon: path.join(__dirname, '../../assets/icon.ico'),
+            urgency: 'critical',
+          });
+          notif.on('click', () => { if (mainWindow) { mainWindow.show(); mainWindow.focus(); } });
+          notif.show();
+        }
+        mainWindow?.webContents.send('agent-ping', data);
+      }
     }
   });
 
@@ -319,7 +354,11 @@ function setupIPC() {
 
           setTimeout(() => {
             try {
-              spawn(tempPath, ['/S'], { detached: true, stdio: 'ignore' }).unref();
+              const appExePath = process.execPath;
+              const batPath = path.join(os.tmpdir(), 'hypercloud-update.bat');
+              const batContent = `@echo off\r\n"${tempPath}" /S\r\ntimeout /t 3 /nobreak >nul\r\nstart "" "${appExePath}"\r\ndel "%~f0"\r\n`;
+              fs.writeFileSync(batPath, batContent);
+              spawn('cmd.exe', ['/c', batPath], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
               app.isQuitting = true;
               app.quit();
             } catch (err) {
@@ -338,6 +377,13 @@ function setupIPC() {
         resolve({ success: false, error: err.message });
       });
     });
+  });
+
+  ipcMain.handle('app:openExternal', (_, url) => {
+    const { shell } = require('electron');
+    if (url && (url.startsWith('mailto:') || url.startsWith('https://') || url.startsWith('http://'))) {
+      shell.openExternal(url);
+    }
   });
 
   ipcMain.handle('window:minimize', () => mainWindow?.minimize());

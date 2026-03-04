@@ -3,7 +3,7 @@ import { useStore, setState } from '../lib/store';
 import * as ipc from '../lib/ipc';
 
 export default function InCall() {
-  const { callState, users, contacts, user, sipAccounts, presence, warmTransferState } = useStore();
+  const { callState, users, contacts, user, sipAccounts, presence } = useStore();
   const [muted, setMuted] = useState(false);
   const [held, setHeld] = useState(false);
   const [seconds, setSeconds] = useState(0);
@@ -22,21 +22,13 @@ export default function InCall() {
   const [transferQuery, setTransferQuery] = useState('');
   const [transferStatus, setTransferStatus] = useState('');
   const [transferring, setTransferring] = useState(false);
-  const warmTransferActive = warmTransferState?.state === 'consulting';
-  const warmTransferTarget = warmTransferState?.target || '';
-
-  useEffect(() => {
-    if (!warmTransferState) return;
-    if (warmTransferState.state === 'consulting') setTransferStatus(`Calling ${warmTransferState.target || ''}...`);
-    else if (warmTransferState.state === 'completed') { setTransferStatus('Transfer completed'); setTimeout(() => setShowTransferPanel(false), 800); }
-    else if (warmTransferState.state === 'cancelled') setTransferStatus('Transfer cancelled');
-    else if (warmTransferState.state === 'failed') setTransferStatus(warmTransferState.reason || 'Transfer failed');
-  }, [warmTransferState]);
   const [recording, setRecording] = useState(true);
   const [maskActive, setMaskActive] = useState(false);
   const [showPrerecorded, setShowPrerecorded] = useState(false);
   const [prerecordedMsgs, setPrerecordedMsgs] = useState([]);
   const [playingMsg, setPlayingMsg] = useState(null);
+  const [transferFilter, setTransferFilter] = useState('all');
+  const [transferDests, setTransferDests] = useState({ ringGroups: [], callCenterQueues: [], extensions: [], agents: [] });
 
   useEffect(() => {
     if (callState?.state === 'confirmed') {
@@ -57,6 +49,12 @@ export default function InCall() {
       if (data.status === 'error') setTranscribing(false);
     });
   }, []);
+
+  useEffect(() => {
+    if (showTransferPanel) {
+      ipc.fetchTransferDestinations().then(d => setTransferDests(d || { ringGroups: [], callCenterQueues: [], extensions: [], agents: [] })).catch(() => {});
+    }
+  }, [showTransferPanel]);
 
   const isConnected = callState?.state === 'confirmed';
   const statusText = { calling: 'Calling...', early: 'Ringing...', connecting: 'Connecting...', confirmed: 'Connected' }[callState?.state] || 'Calling...';
@@ -93,20 +91,30 @@ export default function InCall() {
     setTransferring(false);
   }
 
-  const [transferDests, setTransferDests] = useState({ ringGroups: [], callCenterQueues: [] });
-
-  useEffect(() => {
-    if (showTransferPanel) {
-      ipc.fetchTransferDestinations().then(d => setTransferDests(d || { ringGroups: [], callCenterQueues: [] })).catch(() => {});
-    }
-  }, [showTransferPanel]);
-
   const localContacts = JSON.parse(localStorage.getItem('scv_local_contacts') || '[]');
-  const allCandidates = [
-    ...users.filter(u => u.id !== user?.id).map(u => ({
-      id: `user-${u.id}`, kind: 'user', name: u.display_name || u.email || 'User',
-      number: u.extension || u.sip_username || '', subtitle: u.email || '',
-      presence: (presence?.[u.id] || u.presence || 'offline').toLowerCase(),
+  const appUserExts = new Set(users.map(u => u.extension || u.sip_username || '').filter(Boolean));
+  const transferCandidates = [
+    ...users
+      .filter(u => u.id !== user?.id)
+      .map(u => ({
+        id: `user-${u.id}`,
+        kind: 'user',
+        name: u.display_name || u.email || 'User',
+        number: u.extension || u.sip_username || '',
+        subtitle: u.email || '',
+        presence: (presence?.[u.id] || u.presence || 'offline').toLowerCase(),
+      }))
+      .filter(c => c.number),
+    ...(transferDests.extensions || [])
+      .filter(e => !appUserExts.has(e.extension))
+      .map(e => ({
+        id: `ext-${e.id}`, kind: 'extension', name: e.name,
+        number: e.extension, subtitle: `Extension ${e.extension}`, presence: 'unknown',
+      })),
+    ...(transferDests.agents || []).map(a => ({
+      id: `agent-${a.id}`, kind: 'agent', name: a.name,
+      number: a.agentId?.split('@')[0] || '', subtitle: `Agent \u00B7 ${a.status || 'Unknown'}`,
+      presence: a.status === 'Available' ? 'online' : a.status === 'Logged Out' ? 'offline' : 'dnd',
     })).filter(c => c.number),
     ...(transferDests.callCenterQueues || []).map(q => ({
       id: `cc-${q.id}`, kind: 'callcenter', name: q.name,
@@ -116,18 +124,37 @@ export default function InCall() {
       id: `rg-${rg.id}`, kind: 'ringgroup', name: rg.name,
       number: rg.extension, subtitle: `Ring Group \u00B7 ${rg.strategy}`, presence: 'unknown',
     })),
-    ...contacts.map(c => ({
-      id: `contact-${c.id}`, kind: 'contact', name: c.name || 'Contact',
-      number: c.number || c.phones?.[0]?.number || '', subtitle: c.organization || c.source || '', presence: 'unknown',
-    })).filter(c => c.number),
-    ...localContacts.map(c => ({
-      id: `local-${c.id}`, kind: 'local', name: c.name || 'Local contact',
-      number: c.number || '', subtitle: c.organization || 'Local', presence: 'unknown',
-    })).filter(c => c.number),
+    ...contacts
+      .map(c => ({
+        id: `contact-${c.id}`,
+        kind: 'contact',
+        name: c.name || 'Contact',
+        number: c.number || c.phones?.[0]?.number || '',
+        subtitle: c.organization || c.source || '',
+        presence: 'unknown',
+      }))
+      .filter(c => c.number),
+    ...localContacts
+      .map(c => ({
+        id: `local-${c.id}`,
+        kind: 'local',
+        name: c.name || 'Local contact',
+        number: c.number || '',
+        subtitle: c.organization || 'Local',
+        presence: 'unknown',
+      }))
+      .filter(c => c.number),
   ];
-  const filteredTransferCandidates = transferQuery.trim()
-    ? allCandidates.filter(c => `${c.name} ${c.number} ${c.subtitle || ''}`.toLowerCase().includes(transferQuery.toLowerCase()))
-    : allCandidates;
+  const filteredTransferCandidates = transferCandidates.filter(c => {
+    if (transferFilter !== 'all') {
+      if (transferFilter === 'contact' && c.kind !== 'contact' && c.kind !== 'local') return false;
+      if (transferFilter !== 'contact' && c.kind !== transferFilter) return false;
+    }
+    if (transferQuery.trim()) {
+      return `${c.name} ${c.number} ${c.subtitle || ''}`.toLowerCase().includes(transferQuery.toLowerCase());
+    }
+    return true;
+  });
 
   function presenceBadge(p) {
     if (['in_call', 'on_call', 'busy'].includes(p)) {
@@ -297,56 +324,37 @@ export default function InCall() {
                 autoFocus
                 className="w-full px-3 py-2.5 rounded-lg bg-white/95 text-gray-900 text-sm outline-none"
               />
-              {warmTransferActive ? (
-                <div className="mt-2 space-y-2">
-                  <div className="flex items-center gap-2 p-2 bg-amber-500/20 rounded-lg">
-                    <div className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" />
-                    <span className="text-xs text-amber-200">Consulting with {warmTransferTarget}...</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => ipc.warmTransferComplete()}
-                      className="flex-1 px-3 py-2 text-xs rounded-md bg-green-500 hover:bg-green-600 text-white font-semibold"
-                    >
-                      Complete Transfer
-                    </button>
-                    <button
-                      onClick={() => ipc.warmTransferCancel()}
-                      className="flex-1 px-3 py-2 text-xs rounded-md bg-red-500/80 hover:bg-red-600 text-white font-medium"
-                    >
-                      Cancel &amp; Return
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="mt-2 flex gap-2">
-                  <button
-                    onClick={() => doTransfer(transferQuery)}
-                    disabled={transferring || !transferQuery.trim()}
-                    className="px-3 py-1.5 text-xs rounded-md bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white font-medium"
-                    title="Blind transfer - immediately connects caller to target"
-                  >
-                    {transferring ? 'Transferring...' : 'Blind Transfer'}
-                  </button>
-                  <button
-                    onClick={() => {
-                      const target = getTransferTarget(transferQuery);
-                      if (target) { setWarmTransferTarget(transferQuery); ipc.warmTransferCall(target); }
-                    }}
-                    disabled={transferring || !transferQuery.trim()}
-                    className="px-3 py-1.5 text-xs rounded-md bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-medium"
-                    title="Warm transfer - speak to target first, then connect"
-                  >
-                    Warm Transfer
-                  </button>
-                  <button
-                    onClick={() => setShowTransferPanel(false)}
-                    className="px-3 py-1.5 text-xs rounded-md bg-white/10 hover:bg-white/15 text-white/80"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              )}
+              <div className="mt-2 flex gap-1 flex-wrap">
+                {[
+                  { id: 'all', label: 'All' },
+                  { id: 'user', label: 'Users' },
+                  { id: 'extension', label: 'Extensions' },
+                  { id: 'agent', label: 'Agents' },
+                  { id: 'callcenter', label: 'Call Centers' },
+                  { id: 'ringgroup', label: 'Ring Groups' },
+                  { id: 'contact', label: 'Contacts' },
+                ].map(f => (
+                  <button key={f.id} onClick={() => setTransferFilter(f.id)}
+                    className={`px-2.5 py-1 text-[10px] font-medium rounded-full transition-colors ${
+                      transferFilter === f.id ? 'bg-blue-500 text-white' : 'bg-white/10 text-white/60 hover:bg-white/20'
+                    }`}>{f.label}</button>
+                ))}
+              </div>
+              <div className="mt-2 flex gap-2">
+                <button
+                  onClick={() => doTransfer(transferQuery)}
+                  disabled={transferring || !transferQuery.trim()}
+                  className="px-3 py-1.5 text-xs rounded-md bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white font-medium"
+                >
+                  {transferring ? 'Transferring...' : 'Transfer'}
+                </button>
+                <button
+                  onClick={() => setShowTransferPanel(false)}
+                  className="px-3 py-1.5 text-xs rounded-md bg-white/10 hover:bg-white/15 text-white/80"
+                >
+                  Cancel
+                </button>
+              </div>
               {transferStatus && <div className="mt-2 text-[11px] text-blue-200">{transferStatus}</div>}
             </div>
 
@@ -356,6 +364,8 @@ export default function InCall() {
               ) : (() => {
                 const groups = [
                   { key: 'user', label: 'Users', color: 'bg-blue-500', items: filteredTransferCandidates.filter(c => c.kind === 'user') },
+                  { key: 'extension', label: 'Extensions', color: 'bg-cyan-500', items: filteredTransferCandidates.filter(c => c.kind === 'extension') },
+                  { key: 'agent', label: 'Agents', color: 'bg-indigo-500', items: filteredTransferCandidates.filter(c => c.kind === 'agent') },
                   { key: 'callcenter', label: 'Call Centers', color: 'bg-purple-500', items: filteredTransferCandidates.filter(c => c.kind === 'callcenter') },
                   { key: 'ringgroup', label: 'Ring Groups', color: 'bg-amber-500', items: filteredTransferCandidates.filter(c => c.kind === 'ringgroup') },
                   { key: 'contact', label: 'Contacts', color: 'bg-green-500', items: filteredTransferCandidates.filter(c => c.kind === 'contact' || c.kind === 'local') },
@@ -374,10 +384,12 @@ export default function InCall() {
                             <div className="text-sm text-white">{c.name}</div>
                             {c.kind !== 'user' && (
                               <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${
+                                c.kind === 'extension' ? 'bg-cyan-500/20 text-cyan-300' :
+                                c.kind === 'agent' ? 'bg-indigo-500/20 text-indigo-300' :
                                 c.kind === 'callcenter' ? 'bg-purple-500/20 text-purple-300' :
                                 c.kind === 'ringgroup' ? 'bg-amber-500/20 text-amber-300' :
                                 'bg-green-500/20 text-green-300'
-                              }`}>{c.kind === 'callcenter' ? 'Queue' : c.kind === 'ringgroup' ? 'Group' : 'Contact'}</span>
+                              }`}>{c.kind === 'extension' ? 'Ext' : c.kind === 'agent' ? 'Agent' : c.kind === 'callcenter' ? 'Queue' : c.kind === 'ringgroup' ? 'Group' : 'Contact'}</span>
                             )}
                           </div>
                           {c.kind === 'user' && (

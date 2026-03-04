@@ -93,20 +93,33 @@ export default function InCall() {
     setTransferring(false);
   }
 
-  const [transferDests, setTransferDests] = useState({ ringGroups: [], callCenterQueues: [] });
+  const [transferDests, setTransferDests] = useState({ ringGroups: [], callCenterQueues: [], extensions: [], agents: [] });
+  const [transferFilter, setTransferFilter] = useState('all');
 
   useEffect(() => {
     if (showTransferPanel) {
-      ipc.fetchTransferDestinations().then(d => setTransferDests(d || { ringGroups: [], callCenterQueues: [] })).catch(() => {});
+      ipc.fetchTransferDestinations().then(d => setTransferDests(d || { ringGroups: [], callCenterQueues: [], extensions: [], agents: [] })).catch(() => {});
     }
   }, [showTransferPanel]);
 
   const localContacts = JSON.parse(localStorage.getItem('scv_local_contacts') || '[]');
+  const appUserExts = new Set(users.map(u => u.extension || u.sip_username || '').filter(Boolean));
   const allCandidates = [
     ...users.filter(u => u.id !== user?.id).map(u => ({
       id: `user-${u.id}`, kind: 'user', name: u.display_name || u.email || 'User',
       number: u.extension || u.sip_username || '', subtitle: u.email || '',
       presence: (presence?.[u.id] || u.presence || 'offline').toLowerCase(),
+    })).filter(c => c.number),
+    ...(transferDests.extensions || [])
+      .filter(e => !appUserExts.has(e.extension))
+      .map(e => ({
+        id: `ext-${e.id}`, kind: 'extension', name: e.name,
+        number: e.extension, subtitle: `Extension ${e.extension}`, presence: 'unknown',
+      })),
+    ...(transferDests.agents || []).map(a => ({
+      id: `agent-${a.id}`, kind: 'agent', name: a.name,
+      number: a.agentId?.split('@')[0] || '', subtitle: `Agent \u00B7 ${a.status || 'Unknown'}`,
+      presence: a.status === 'Available' ? 'online' : a.status === 'Logged Out' ? 'offline' : 'dnd',
     })).filter(c => c.number),
     ...(transferDests.callCenterQueues || []).map(q => ({
       id: `cc-${q.id}`, kind: 'callcenter', name: q.name,
@@ -125,9 +138,16 @@ export default function InCall() {
       number: c.number || '', subtitle: c.organization || 'Local', presence: 'unknown',
     })).filter(c => c.number),
   ];
-  const filteredTransferCandidates = transferQuery.trim()
-    ? allCandidates.filter(c => `${c.name} ${c.number} ${c.subtitle || ''}`.toLowerCase().includes(transferQuery.toLowerCase()))
-    : allCandidates;
+  const filteredTransferCandidates = allCandidates.filter(c => {
+    if (transferFilter !== 'all') {
+      if (transferFilter === 'contact' && c.kind !== 'contact' && c.kind !== 'local') return false;
+      if (transferFilter !== 'contact' && c.kind !== transferFilter) return false;
+    }
+    if (transferQuery.trim()) {
+      return `${c.name} ${c.number} ${c.subtitle || ''}`.toLowerCase().includes(transferQuery.toLowerCase());
+    }
+    return true;
+  });
 
   function presenceBadge(p) {
     if (['in_call', 'on_call', 'busy'].includes(p)) {
@@ -297,6 +317,22 @@ export default function InCall() {
                 autoFocus
                 className="w-full px-3 py-2.5 rounded-lg bg-white/95 text-gray-900 text-sm outline-none"
               />
+              <div className="mt-2 flex gap-1 flex-wrap">
+                {[
+                  { id: 'all', label: 'All' },
+                  { id: 'user', label: 'Users' },
+                  { id: 'extension', label: 'Extensions' },
+                  { id: 'agent', label: 'Agents' },
+                  { id: 'callcenter', label: 'Call Centers' },
+                  { id: 'ringgroup', label: 'Ring Groups' },
+                  { id: 'contact', label: 'Contacts' },
+                ].map(f => (
+                  <button key={f.id} onClick={() => setTransferFilter(f.id)}
+                    className={`px-2.5 py-1 text-[10px] font-medium rounded-full transition-colors ${
+                      transferFilter === f.id ? 'bg-blue-500 text-white' : 'bg-white/10 text-white/60 hover:bg-white/20'
+                    }`}>{f.label}</button>
+                ))}
+              </div>
               {warmTransferActive ? (
                 <div className="mt-2 space-y-2">
                   <div className="flex items-center gap-2 p-2 bg-amber-500/20 rounded-lg">
@@ -356,6 +392,8 @@ export default function InCall() {
               ) : (() => {
                 const groups = [
                   { key: 'user', label: 'Users', color: 'bg-blue-500', items: filteredTransferCandidates.filter(c => c.kind === 'user') },
+                  { key: 'extension', label: 'Extensions', color: 'bg-cyan-500', items: filteredTransferCandidates.filter(c => c.kind === 'extension') },
+                  { key: 'agent', label: 'Agents', color: 'bg-indigo-500', items: filteredTransferCandidates.filter(c => c.kind === 'agent') },
                   { key: 'callcenter', label: 'Call Centers', color: 'bg-purple-500', items: filteredTransferCandidates.filter(c => c.kind === 'callcenter') },
                   { key: 'ringgroup', label: 'Ring Groups', color: 'bg-amber-500', items: filteredTransferCandidates.filter(c => c.kind === 'ringgroup') },
                   { key: 'contact', label: 'Contacts', color: 'bg-green-500', items: filteredTransferCandidates.filter(c => c.kind === 'contact' || c.kind === 'local') },
@@ -374,10 +412,12 @@ export default function InCall() {
                             <div className="text-sm text-white">{c.name}</div>
                             {c.kind !== 'user' && (
                               <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${
+                                c.kind === 'extension' ? 'bg-cyan-500/20 text-cyan-300' :
+                                c.kind === 'agent' ? 'bg-indigo-500/20 text-indigo-300' :
                                 c.kind === 'callcenter' ? 'bg-purple-500/20 text-purple-300' :
                                 c.kind === 'ringgroup' ? 'bg-amber-500/20 text-amber-300' :
                                 'bg-green-500/20 text-green-300'
-                              }`}>{c.kind === 'callcenter' ? 'Queue' : c.kind === 'ringgroup' ? 'Group' : 'Contact'}</span>
+                              }`}>{c.kind === 'extension' ? 'Ext' : c.kind === 'agent' ? 'Agent' : c.kind === 'callcenter' ? 'Queue' : c.kind === 'ringgroup' ? 'Group' : 'Contact'}</span>
                             )}
                           </div>
                           {c.kind === 'user' && (

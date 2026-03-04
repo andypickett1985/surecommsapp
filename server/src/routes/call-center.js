@@ -43,17 +43,34 @@ async function getUserSettings(userId) {
   return map;
 }
 
-async function getStatusOptions() {
+async function getStatusOptions(domainUuid) {
   try {
-    const result = await fpbx.query(
-      `SELECT DISTINCT agent_status
-       FROM v_call_center_agents
-       WHERE agent_status IS NOT NULL AND agent_status <> ''
-       ORDER BY agent_status`
-    );
-    const fromDb = result.rows.map(r => r.agent_status);
-    const merged = Array.from(new Set([...DEFAULT_STATUSES, ...fromDb]));
-    return merged;
+    const [globalResult, domainResult] = await Promise.all([
+      fpbx.query(
+        `SELECT default_setting_value
+         FROM v_default_settings
+         WHERE default_setting_category = 'call_center'
+           AND default_setting_subcategory = 'agent_status'
+           AND default_setting_name = 'array'
+           AND default_setting_enabled = 'true'
+         ORDER BY default_setting_order, default_setting_value`
+      ),
+      domainUuid ? fpbx.query(
+        `SELECT domain_setting_value
+         FROM v_domain_settings
+         WHERE domain_uuid = $1
+           AND domain_setting_category = 'call_center'
+           AND domain_setting_subcategory = 'agent_status'
+           AND domain_setting_name = 'array'
+           AND domain_setting_enabled = 'true'
+         ORDER BY domain_setting_order, domain_setting_value`,
+        [domainUuid]
+      ) : Promise.resolve({ rows: [] }),
+    ]);
+    const globalStatuses = globalResult.rows.map(r => r.default_setting_value);
+    const domainStatuses = domainResult.rows.map(r => r.domain_setting_value);
+    const merged = Array.from(new Set([...globalStatuses, ...domainStatuses]));
+    return merged.length > 0 ? merged : DEFAULT_STATUSES;
   } catch {
     return DEFAULT_STATUSES;
   }
@@ -63,8 +80,10 @@ router.get('/me', authenticateToken, async (req, res) => {
   try {
     const settings = await getUserSettings(req.user.id);
     const enabled = settings.call_center_enabled === 'true';
+    const domainUuid = await getUserDomainUuid(req.user.id);
+
     if (!enabled) {
-      return res.json({ enabled: false, statuses: await getStatusOptions() });
+      return res.json({ enabled: false, statuses: await getStatusOptions(domainUuid) });
     }
 
     const agentUuid = settings.call_center_agent_uuid;
@@ -85,7 +104,7 @@ router.get('/me', authenticateToken, async (req, res) => {
       mode: settings.call_center_mode || 'manual',
       linked: !!agent,
       agent,
-      statuses: await getStatusOptions(),
+      statuses: await getStatusOptions(domainUuid),
     });
   } catch (err) {
     console.error('Call center /me error:', err);
@@ -599,7 +618,7 @@ router.get('/transfer-destinations', authenticateToken, async (req, res) => {
     const domainUuid = await getUserDomainUuid(req.user.id);
     if (!domainUuid) return res.json({ ringGroups: [], callCenterQueues: [] });
 
-    const [rgResult, ccResult] = await Promise.all([
+    const [rgResult, ccResult, extResult, agentResult] = await Promise.all([
       fpbx.query(
         `SELECT ring_group_uuid, ring_group_name, ring_group_extension, ring_group_strategy
          FROM v_ring_groups
@@ -612,6 +631,20 @@ router.get('/transfer-destinations', authenticateToken, async (req, res) => {
          FROM v_call_center_queues
          WHERE domain_uuid = $1
          ORDER BY queue_name`,
+        [domainUuid]
+      ),
+      fpbx.query(
+        `SELECT extension_uuid, extension, effective_caller_id_name, description, enabled
+         FROM v_extensions
+         WHERE domain_uuid = $1 AND enabled = 'true'
+         ORDER BY extension`,
+        [domainUuid]
+      ),
+      fpbx.query(
+        `SELECT a.call_center_agent_uuid, a.agent_name, a.agent_id, a.agent_status
+         FROM v_call_center_agents a
+         WHERE a.domain_uuid = $1
+         ORDER BY a.agent_name`,
         [domainUuid]
       ),
     ]);
@@ -629,9 +662,191 @@ router.get('/transfer-destinations', authenticateToken, async (req, res) => {
         extension: q.queue_extension,
         strategy: q.queue_strategy,
       })),
+      extensions: extResult.rows.map(e => ({
+        id: e.extension_uuid,
+        extension: e.extension,
+        name: e.effective_caller_id_name || e.description || `Ext ${e.extension}`,
+      })),
+      agents: agentResult.rows.map(a => ({
+        id: a.call_center_agent_uuid,
+        name: a.agent_name,
+        agentId: a.agent_id,
+        status: a.agent_status,
+      })),
     });
   } catch (err) {
     console.error('Transfer destinations error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- BLF Board: preferences + bulk live ----
+
+router.get('/blf/prefs', authenticateToken, async (req, res) => {
+  try {
+    const r = await db.query(
+      `SELECT setting_value FROM user_settings WHERE user_id = $1 AND setting_key = 'blf_queues'`,
+      [req.user.id]
+    );
+    const queueIds = r.rows[0]?.setting_value ? JSON.parse(r.rows[0].setting_value) : [];
+    res.json({ queueIds });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/blf/prefs', authenticateToken, async (req, res) => {
+  try {
+    const { queueIds } = req.body;
+    if (!Array.isArray(queueIds)) return res.status(400).json({ error: 'queueIds must be an array' });
+    await db.query(
+      `INSERT INTO user_settings (user_id, setting_key, setting_value)
+       VALUES ($1, 'blf_queues', $2)
+       ON CONFLICT (user_id, setting_key) DO UPDATE SET setting_value = $2`,
+      [req.user.id, JSON.stringify(queueIds)]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/blf/live', authenticateToken, async (req, res) => {
+  try {
+    const { queueIds } = req.body;
+    if (!Array.isArray(queueIds) || queueIds.length === 0) return res.json({ queues: [] });
+
+    const qRows = await fpbx.query(
+      `SELECT q.call_center_queue_uuid, q.queue_name, q.queue_extension, q.queue_strategy,
+              d.domain_name
+       FROM v_call_center_queues q
+       JOIN v_domains d ON d.domain_uuid = q.domain_uuid
+       WHERE q.call_center_queue_uuid = ANY($1::uuid[])`,
+      [queueIds]
+    );
+
+    const results = await Promise.all(qRows.rows.map(async (q) => {
+      const queueKey = `${q.queue_extension}@${q.domain_name}`;
+      const [agentsRaw, membersRaw] = await Promise.all([
+        runFsCli(`callcenter_config queue list agents ${queueKey}`),
+        runFsCli(`callcenter_config queue list members ${queueKey}`),
+      ]);
+
+      const agentsParsed = [];
+      if (agentsRaw && !agentsRaw.startsWith('+OK')) {
+        const lines = agentsRaw.split('\n').filter(l => l.trim() && !l.startsWith('+OK'));
+        const header = lines[0]?.split('|') || [];
+        for (let i = 1; i < lines.length; i++) {
+          if (!lines[i].trim() || lines[i].startsWith('+OK')) continue;
+          const cols = lines[i].split('|');
+          if (cols.length < 3) continue;
+          const obj = {};
+          header.forEach((h, idx) => { obj[h.trim()] = (cols[idx] || '').trim(); });
+          agentsParsed.push(obj);
+        }
+      }
+
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const agentUuids = agentsParsed.map(a => a.name).filter(n => n && uuidRegex.test(n));
+      let nameMap = {};
+      if (agentUuids.length > 0) {
+        try {
+          const nameResult = await fpbx.query(
+            `SELECT call_center_agent_uuid, agent_name, agent_id
+             FROM v_call_center_agents WHERE call_center_agent_uuid = ANY($1::uuid[])`,
+            [agentUuids]
+          );
+          for (const r of nameResult.rows) nameMap[r.call_center_agent_uuid] = { agent_name: r.agent_name, agent_id: r.agent_id };
+        } catch {}
+      }
+
+      const extensions = Object.values(nameMap).map(n => n.agent_id?.split('@')[0]).filter(Boolean);
+      let emailMap = {};
+      if (extensions.length > 0) {
+        try {
+          const emailResult = await db.query(
+            `SELECT u.email, s.sip_username FROM users u JOIN sip_accounts s ON s.user_id = u.id WHERE s.sip_username = ANY($1::text[])`,
+            [extensions]
+          );
+          for (const r of emailResult.rows) emailMap[r.sip_username] = r.email;
+        } catch {}
+      }
+
+      const agents = agentsParsed
+        .filter(a => a.name && uuidRegex.test(a.name))
+        .map(a => {
+          const ext = nameMap[a.name]?.agent_id?.split('@')[0] || '';
+          return {
+            uuid: a.name,
+            display_name: nameMap[a.name]?.agent_name || ext || 'Agent',
+            agent_id: nameMap[a.name]?.agent_id || '',
+            extension: ext,
+            email: emailMap[ext] || '',
+            status: a.status || 'Unknown',
+            state: a.state || 'Idle',
+          };
+        });
+
+      const members = [];
+      if (membersRaw && membersRaw !== '+OK') {
+        const lines = membersRaw.split('\n');
+        const header = lines[0]?.split('|') || [];
+        for (let i = 1; i < lines.length; i++) {
+          if (!lines[i].trim()) continue;
+          const cols = lines[i].split('|');
+          const obj = {};
+          header.forEach((h, idx) => { obj[h.trim()] = (cols[idx] || '').trim(); });
+          members.push(obj);
+        }
+      }
+
+      return {
+        id: q.call_center_queue_uuid,
+        name: q.queue_name,
+        extension: q.queue_extension,
+        strategy: q.queue_strategy,
+        agents,
+        waitingCount: members.length,
+        members,
+      };
+    }));
+
+    res.json({ queues: results });
+  } catch (err) {
+    console.error('BLF live error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- BLF Ping: send alert to agent ----
+
+router.post('/blf/ping', authenticateToken, async (req, res) => {
+  try {
+    const { extension } = req.body;
+    if (!extension) return res.status(400).json({ error: 'extension required' });
+
+    const senderResult = await db.query('SELECT display_name, email FROM users WHERE id = $1', [req.user.id]);
+    const senderName = senderResult.rows[0]?.display_name || senderResult.rows[0]?.email || 'Someone';
+
+    const targetResult = await db.query(
+      `SELECT u.id FROM users u JOIN sip_accounts s ON s.user_id = u.id WHERE s.sip_username = $1 AND u.tenant_id = $2`,
+      [extension, req.user.tenant_id]
+    );
+
+    if (targetResult.rows.length === 0) return res.status(404).json({ error: 'Agent not found in app' });
+
+    const { sendCommandToUser } = require('../ws');
+    const sent = sendCommandToUser(targetResult.rows[0].id, {
+      event: 'agentPing',
+      from: senderName,
+      fromExtension: req.body.fromExtension || '',
+      message: req.body.message || `${senderName} is trying to reach you`,
+      timestamp: new Date().toISOString(),
+    });
+
+    res.json({ success: true, delivered: sent });
+  } catch (err) {
+    console.error('BLF ping error:', err);
     res.status(500).json({ error: err.message });
   }
 });

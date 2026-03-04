@@ -115,7 +115,7 @@ class ProvisionClient {
           }
         });
       });
-      req.on('error', reject);
+      req.on('error', (err) => { console.error('Provision request error:', err.message); reject(err); });
       if (payload) req.write(payload);
       req.end();
     });

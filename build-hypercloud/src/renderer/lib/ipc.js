@@ -1,5 +1,6 @@
 const api = window.electronAPI || {};
 
+export const getAppVersion = () => api.getAppVersion?.() || '0.0.0';
 export const login = (e, p) => api.login?.(e, p);
 export const logout = () => api.logout?.();
 export const getSavedSession = () => api.getSavedSession?.();
@@ -81,6 +82,10 @@ export const fetchCallCenterQueueLive = (qId) => apiFetch(`/api/call-center/queu
 export const fetchCallCenterAvailableAgents = (qId) => apiFetch(`/api/call-center/queues/${qId}/available-agents`);
 export const addCallCenterQueueAgent = (qId, agentUuid, level, pos) => apiFetch(`/api/call-center/queues/${qId}/agents`, { method: 'POST', body: JSON.stringify({ call_center_agent_uuid: agentUuid, tier_level: level || 0, tier_position: pos || 0 }) });
 export const removeCallCenterQueueAgent = (qId, agentUuid) => apiFetch(`/api/call-center/queues/${qId}/agents/${agentUuid}`, { method: 'DELETE' });
+export const getBlfPrefs = () => apiFetch('/api/call-center/blf/prefs');
+export const saveBlfPrefs = (queueIds) => apiFetch('/api/call-center/blf/prefs', { method: 'PUT', body: JSON.stringify({ queueIds }) });
+export const fetchBlfLive = (queueIds) => apiFetch('/api/call-center/blf/live', { method: 'POST', body: JSON.stringify({ queueIds }) });
+export const sendBlfPing = (extension, fromExtension) => apiFetch('/api/call-center/blf/ping', { method: 'POST', body: JSON.stringify({ extension, fromExtension }) });
 export const getProfile = () => apiFetch('/api/profile/me');
 export const getCallerIds = () => apiFetch('/api/caller-id/available');
 export const getSelectedCallerId = () => apiFetch('/api/caller-id/selected');
@@ -105,3 +110,5 @@ export const checkForUpdates = () => apiFetch('/api/app/versions');
 export const maskRecording = () => apiFetch('/api/call-center/recording/mask', { method: 'POST' });
 export const unmaskRecording = () => apiFetch('/api/call-center/recording/unmask', { method: 'POST' });
 export const updatePresence = (status) => apiFetch('/api/users/presence', { method: 'PUT', body: JSON.stringify({ status }) });
+export const onAgentPing = (cb) => api.onAgentPing?.(cb);
+export const openExternal = (url) => api.openExternal?.(url);

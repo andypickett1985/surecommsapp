@@ -15,10 +15,6 @@ export const toggleMute = (m) => api.toggleMute?.(m);
 export const toggleHold = (h) => api.toggleHold?.(h);
 export const sendDtmf = (d) => api.sendDtmf?.(d);
 export const transfer = (n) => api.transfer?.(n);
-export const fetchTransferDestinations = () => apiFetch('/api/call-center/transfer-destinations');
-export const warmTransferCall = (n) => api.warmTransferCall?.(n);
-export const warmTransferComplete = () => api.warmTransferComplete?.();
-export const warmTransferCancel = () => api.warmTransferCancel?.();
 export const onSipEvent = (cb) => api.onSipEvent?.(cb);
 
 export const onWsEvent = (cb) => api.onWsEvent?.(cb);
@@ -81,6 +77,9 @@ export const fetchCallCenterQueueLive = (qId) => apiFetch(`/api/call-center/queu
 export const fetchCallCenterAvailableAgents = (qId) => apiFetch(`/api/call-center/queues/${qId}/available-agents`);
 export const addCallCenterQueueAgent = (qId, agentUuid, level, pos) => apiFetch(`/api/call-center/queues/${qId}/agents`, { method: 'POST', body: JSON.stringify({ call_center_agent_uuid: agentUuid, tier_level: level || 0, tier_position: pos || 0 }) });
 export const removeCallCenterQueueAgent = (qId, agentUuid) => apiFetch(`/api/call-center/queues/${qId}/agents/${agentUuid}`, { method: 'DELETE' });
+export const getBlfPrefs = () => apiFetch('/api/call-center/blf/prefs');
+export const saveBlfPrefs = (queueIds) => apiFetch('/api/call-center/blf/prefs', { method: 'PUT', body: JSON.stringify({ queueIds }) });
+export const fetchBlfLive = (queueIds) => apiFetch('/api/call-center/blf/live', { method: 'POST', body: JSON.stringify({ queueIds }) });
 export const getProfile = () => apiFetch('/api/profile/me');
 export const getCallerIds = () => apiFetch('/api/caller-id/available');
 export const getSelectedCallerId = () => apiFetch('/api/caller-id/selected');
@@ -101,7 +100,7 @@ export async function uploadAvatar(file) {
   return res.json();
 }
 export const deleteAvatar = () => apiFetch('/api/profile/avatar', { method: 'DELETE' });
-export const checkForUpdates = () => apiFetch('/api/app/versions');
-export const maskRecording = () => apiFetch('/api/call-center/recording/mask', { method: 'POST' });
-export const unmaskRecording = () => apiFetch('/api/call-center/recording/unmask', { method: 'POST' });
 export const updatePresence = (status) => apiFetch('/api/users/presence', { method: 'PUT', body: JSON.stringify({ status }) });
+export const sendBlfPing = (extension, fromExtension) => apiFetch('/api/call-center/blf/ping', { method: 'POST', body: JSON.stringify({ extension, fromExtension }) });
+export const onAgentPing = (cb) => api.onAgentPing?.(cb);
+export const openExternal = (url) => api.openExternal?.(url);

@@ -33,9 +33,8 @@ function DefaultPanel() {
       await ipc.setCallCenterStatus(nextStatus);
       const mapped =
         nextStatus === 'Available' || nextStatus === 'Available (On Demand)' ? 'online' :
-        nextStatus === 'On Break' ? 'away' :
-        nextStatus === 'Do Not Disturb' ? 'dnd' :
-        nextStatus === 'Logged Out' ? 'offline' : 'busy';
+        nextStatus === 'Logged Out' ? 'offline' :
+        nextStatus === 'Do Not Disturb' ? 'dnd' : 'away';
       ipc.updatePresence(mapped).catch(() => {});
       setState(prev => ({
         callCenter: {

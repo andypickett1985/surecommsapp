@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  getAppVersion: () => ipcRenderer.sendSync('app:getVersion'),
   login: (email, password) => ipcRenderer.invoke('app:login', { email, password }),
   logout: () => ipcRenderer.invoke('app:logout'),
   getSavedSession: () => ipcRenderer.invoke('app:getSavedSession'),
@@ -51,6 +52,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('update:progress');
     ipcRenderer.on('update:progress', (_, data) => callback(data));
   },
+
+  onAgentPing: (callback) => {
+    ipcRenderer.removeAllListeners('agent-ping');
+    ipcRenderer.on('agent-ping', (_, data) => callback(data));
+  },
+  openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),
 
   windowMinimize: () => ipcRenderer.invoke('window:minimize'),
   windowMaximize: () => ipcRenderer.invoke('window:maximize'),

@@ -87,6 +87,10 @@ function setupIPC() {
     mainWindow?.webContents.send('ws:event', data);
   });
 
+  ipcMain.on('app:getVersion', (event) => {
+    event.returnValue = app.getVersion();
+  });
+
   ipcMain.handle('app:login', async (_, { email, password }) => {
     const result = await provisionClient.login(email, password);
     if (result?.token) wsClient.connect(result.token);

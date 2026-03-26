@@ -165,7 +165,15 @@ function QueueGroup({ queue, onCall, onChat, onPing, sipAccounts }) {
         </div>
       </div>
       <div className="grid grid-cols-4 gap-1.5">
-        {queue.agents.map(a => (
+        {[...queue.agents].sort((a, b) => {
+          const aAvail = (a.status || '').toLowerCase().includes('available');
+          const bAvail = (b.status || '').toLowerCase().includes('available');
+          if (aAvail && !bAvail) return -1;
+          if (!aAvail && bAvail) return 1;
+          const aIdle = a.idle_since ? new Date(a.idle_since).getTime() : Date.now();
+          const bIdle = b.idle_since ? new Date(b.idle_since).getTime() : Date.now();
+          return aIdle - bIdle;
+        }).map(a => (
           <AgentTile key={a.uuid} agent={a} onCall={onCall} onChat={onChat} onPing={onPing} sipAccounts={sipAccounts} />
         ))}
       </div>

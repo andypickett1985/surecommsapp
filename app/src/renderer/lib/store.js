@@ -34,6 +34,7 @@ let state = {
     statuses: [],
   },
   ccSelectedQueue: null,
+  activeCalls: {},
   updateAvailable: null,
   warmTransferState: null,
 };

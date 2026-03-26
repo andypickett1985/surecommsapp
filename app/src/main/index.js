@@ -232,6 +232,20 @@ function setupIPC() {
   ipcMain.handle('sip:warmTransferCancel', async () => {
     console.log('[SIP] warmTransferCancel requested');
     return sipEngine.sendCommand({ cmd: 'warmTransferCancel' });
+
+  ipcMain.handle('sip:conferenceCall', async (_, { number }) => {
+    console.log(`[SIP] conferenceCall requested: number=${number}`);
+    const result = sipEngine.sendCommand({ cmd: 'conferenceCall', number });
+    console.log(`[SIP] conferenceCall result:`, JSON.stringify(result));
+    return result;
+  });
+
+  ipcMain.handle('sip:conferenceMerge', async () => {
+    console.log('[SIP] conferenceMerge requested');
+    const result = sipEngine.sendCommand({ cmd: 'conferenceMerge' });
+    console.log('[SIP] conferenceMerge result:', JSON.stringify(result));
+    return result;
+  });
   });
 
   ipcMain.handle('sip:maskRecording', async () => {

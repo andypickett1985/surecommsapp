@@ -19,6 +19,8 @@ export const fetchTransferDestinations = () => apiFetch('/api/call-center/transf
 export const warmTransferCall = (n) => api.warmTransferCall?.(n);
 export const warmTransferComplete = () => api.warmTransferComplete?.();
 export const warmTransferCancel = () => api.warmTransferCancel?.();
+export const conferenceCall = (n) => api.conferenceCall?.(n);
+export const conferenceMerge = () => api.conferenceMerge?.();
 export const onSipEvent = (cb) => api.onSipEvent?.(cb);
 
 export const onWsEvent = (cb) => api.onWsEvent?.(cb);

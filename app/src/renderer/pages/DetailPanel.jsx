@@ -14,7 +14,7 @@ export default function DetailPanel() {
 }
 
 function DefaultPanel() {
-  const { regStatus, user, sipAccounts, callCenter } = useStore();
+  const { regStatus, user, sipAccounts, callCenter, activeCalls, users } = useStore();
   const account = sipAccounts?.[0];
   const [ccSaving, setCcSaving] = useState(false);
 
@@ -90,6 +90,34 @@ function DefaultPanel() {
         <svg width="48" height="48" viewBox="0 0 48 48" fill="none" opacity="0.2"><path d="M14 18C14 16.9 14.9 16 16 16H20L23 20H16V32H32V25L36 28V32C36 33.1 35.1 34 34 34H14C12.9 34 12 33.1 12 32V20C12 18.9 12.9 18 14 18Z" fill="#6db4d6"/><circle cx="30" cy="20" r="6" fill="#6db4d6" opacity="0.9"/></svg>
         <p className="text-sm">Select a user or conversation</p>
       </div>
+
+      {/* Active Calls */}
+      {Object.keys(activeCalls).length > 0 && (
+        <div className="border-t border-gray-200 bg-white px-4 py-3">
+          <h4 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">
+            Active Calls ({Object.keys(activeCalls).length})
+          </h4>
+          <div className="space-y-1.5 max-h-40 overflow-y-auto">
+            {Object.entries(activeCalls).map(([uid, call]) => {
+              const u = users?.find(u => u.id === parseInt(uid));
+              const name = u?.display_name || u?.email || `User ${uid}`;
+              const dur = Math.round((Date.now() - call.since) / 1000);
+              const mins = Math.floor(dur / 60);
+              const secs = dur % 60;
+              return (
+                <div key={uid} className="flex items-center gap-2 px-2 py-1.5 bg-orange-50 rounded-lg">
+                  <div className="w-2 h-2 bg-orange-400 rounded-full animate-pulse" />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-xs font-medium text-gray-800 truncate">{name}</span>
+                    <span className="text-[10px] text-gray-500 ml-1.5">{call.direction === 'in' ? 'Inbound' : 'Outbound'}</span>
+                  </div>
+                  <span className="text-[10px] text-orange-600 font-mono">{call.number}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Bottom input bar */}
       <div className="border-t border-gray-200 bg-white px-4 py-3">

@@ -22,6 +22,11 @@ export default function InCall() {
   const [transferQuery, setTransferQuery] = useState('');
   const [transferStatus, setTransferStatus] = useState('');
   const [transferring, setTransferring] = useState(false);
+  const [transferMode, setTransferMode] = useState('cold');
+  const [warmState, setWarmState] = useState(null);
+  const [warmTarget, setWarmTarget] = useState('');
+  const [conferenceActive, setConferenceActive] = useState(false);
+  const [conferenceCalling, setConferenceCalling] = useState(false);
   const [recording, setRecording] = useState(true);
   const [maskActive, setMaskActive] = useState(false);
   const [showPrerecorded, setShowPrerecorded] = useState(false);
@@ -47,6 +52,33 @@ export default function InCall() {
     });
     ipc.onTranscriptionStatus((data) => {
       if (data.status === 'error') setTranscribing(false);
+    });
+    ipc.onSipEvent((data) => {
+      if (data.event === 'conferenceState') {
+        if (data.state === 'connected') {
+          setConferenceActive(true);
+          setConferenceCalling(false);
+        } else if (data.state === 'failed') {
+          setConferenceCalling(false);
+          setTransferStatus(data.reason || 'Conference call failed');
+        } else if (data.state === 'ended') {
+          setConferenceActive(false);
+        }
+      } else if (data.event === 'warmTransferState') {
+        setWarmState(data.state);
+        if (data.target) setWarmTarget(data.target);
+        if (data.state === 'completed' || data.state === 'cancelled') {
+          setTimeout(() => {
+            setWarmState(null);
+            setWarmTarget('');
+            if (data.state === 'completed') setShowTransferPanel(false);
+          }, 1500);
+        }
+        if (data.state === 'failed') {
+          setTransferStatus(data.reason || 'Warm transfer failed');
+          setTimeout(() => { setWarmState(null); setWarmTarget(''); }, 2000);
+        }
+      }
     });
   }, []);
 
@@ -81,14 +113,36 @@ export default function InCall() {
     if (!target) return;
     setTransferring(true);
     setTransferStatus('');
-    const res = await ipc.transfer(target);
-    if (res?.success === false) {
-      setTransferStatus(res.error || 'Transfer failed');
+
+    if (transferMode === 'warm') {
+      const res = await ipc.warmTransferCall(target);
+      if (res?.success === false) {
+        setTransferStatus(res.error || 'Warm transfer failed');
+        setTransferring(false);
+      } else {
+        setTransferStatus(`Calling ${value}...`);
+        setTransferring(false);
+      }
     } else {
-      setTransferStatus(`Transfer requested to ${target}`);
-      setTimeout(() => setShowTransferPanel(false), 900);
+      const res = await ipc.transfer(target);
+      if (res?.success === false) {
+        setTransferStatus(res.error || 'Transfer failed');
+      } else {
+        setTransferStatus(`Transfer requested to ${target}`);
+        setTimeout(() => setShowTransferPanel(false), 900);
+      }
+      setTransferring(false);
     }
-    setTransferring(false);
+  }
+
+  async function doWarmComplete() {
+    setTransferStatus('Completing transfer...');
+    await ipc.warmTransferComplete();
+  }
+
+  async function doWarmCancel() {
+    setTransferStatus('Cancelling...');
+    await ipc.warmTransferCancel();
   }
 
   const localContacts = JSON.parse(localStorage.getItem('scv_local_contacts') || '[]');
@@ -263,6 +317,18 @@ export default function InCall() {
           {callState?.name && <p className="text-white/50 text-sm mt-1">{callState?.number}</p>}
           <p className="text-white/60 text-sm mt-2">{statusText}</p>
           {isConnected && <p className="text-3xl font-light tabular-nums mt-2 text-white/90">{formatTime(seconds)}</p>}
+          {isConnected && recording && !maskActive && (
+            <div className="flex items-center gap-1.5 mt-2">
+              <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+              <span className="text-xs text-red-400 font-medium">Recording</span>
+            </div>
+          )}
+          {isConnected && maskActive && (
+            <div className="flex items-center gap-1.5 mt-2">
+              <div className="w-2 h-2 bg-amber-400 rounded-full" />
+              <span className="text-xs text-amber-400 font-medium">Recording Paused</span>
+            </div>
+          )}
         </div>
 
         {/* Action buttons */}
@@ -270,6 +336,16 @@ export default function InCall() {
             {[
             { label: 'Mute', active: muted, onClick: doMute, icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/></svg> },
             { label: 'Hold', active: held, onClick: doHold, icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> },
+            { label: conferenceActive ? '3-Way Active' : 'Conference', active: conferenceActive || conferenceCalling, onClick: async () => {
+              if (conferenceActive) return;
+              const target = prompt('Enter number for conference call:');
+              if (!target) return;
+              setConferenceCalling(true);
+              const domain = sipAccounts?.[0]?.domain || sipAccounts?.[0]?.server || '';
+              const fullTarget = target.includes('@') ? target : (domain ? target + '@' + domain : target);
+              const res = await ipc.conferenceCall(fullTarget);
+              if (res?.success === false) { setConferenceCalling(false); alert(res.error || 'Conference call failed'); }
+            }, icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg> },
             { label: 'Transfer', active: showTransferPanel, onClick: () => { setShowTransferPanel(true); setTransferStatus(''); }, icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><path d="M15 3h6v6"/><path d="M10 14L21 3"/></svg> },
             { label: maskActive ? 'Unmask' : 'Mask', active: maskActive, onClick: async () => {
               try {
@@ -315,48 +391,105 @@ export default function InCall() {
               </button>
             </div>
 
-            <div className="p-3 border-b border-white/10">
-              <input
-                value={transferQuery}
-                onChange={(e) => setTransferQuery(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') doTransfer(transferQuery); }}
-                placeholder="Type extension or search name..."
-                autoFocus
-                className="w-full px-3 py-2.5 rounded-lg bg-white/95 text-gray-900 text-sm outline-none"
-              />
-              <div className="mt-2 flex gap-1 flex-wrap">
-                {[
-                  { id: 'all', label: 'All' },
-                  { id: 'user', label: 'Users' },
-                  { id: 'extension', label: 'Extensions' },
-                  { id: 'agent', label: 'Agents' },
-                  { id: 'callcenter', label: 'Call Centers' },
-                  { id: 'ringgroup', label: 'Ring Groups' },
-                  { id: 'contact', label: 'Contacts' },
-                ].map(f => (
-                  <button key={f.id} onClick={() => setTransferFilter(f.id)}
-                    className={`px-2.5 py-1 text-[10px] font-medium rounded-full transition-colors ${
-                      transferFilter === f.id ? 'bg-blue-500 text-white' : 'bg-white/10 text-white/60 hover:bg-white/20'
-                    }`}>{f.label}</button>
-                ))}
+            {/* Warm transfer in-progress banner */}
+            {warmState === 'consulting' && (
+              <div className="px-4 py-3 bg-amber-500/15 border-b border-amber-500/20">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" />
+                  <span className="text-sm font-medium text-amber-200">Speaking with {warmTarget || 'agent'}...</span>
+                </div>
+                <p className="text-[11px] text-white/50 mb-3">Talk to the agent, then complete or cancel the transfer.</p>
+                <div className="flex gap-2">
+                  <button onClick={doWarmComplete}
+                    className="flex-1 py-2 text-xs font-semibold rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white transition-colors">
+                    Complete Transfer
+                  </button>
+                  <button onClick={doWarmCancel}
+                    className="flex-1 py-2 text-xs font-semibold rounded-lg bg-red-500/80 hover:bg-red-500 text-white transition-colors">
+                    Cancel
+                  </button>
+                </div>
               </div>
-              <div className="mt-2 flex gap-2">
-                <button
-                  onClick={() => doTransfer(transferQuery)}
-                  disabled={transferring || !transferQuery.trim()}
-                  className="px-3 py-1.5 text-xs rounded-md bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white font-medium"
-                >
-                  {transferring ? 'Transferring...' : 'Transfer'}
-                </button>
-                <button
-                  onClick={() => setShowTransferPanel(false)}
-                  className="px-3 py-1.5 text-xs rounded-md bg-white/10 hover:bg-white/15 text-white/80"
-                >
-                  Cancel
-                </button>
+            )}
+            {warmState === 'completed' && (
+              <div className="px-4 py-3 bg-emerald-500/15 border-b border-emerald-500/20">
+                <div className="flex items-center gap-2">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-emerald-400"><polyline points="20 6 9 17 4 12"/></svg>
+                  <span className="text-sm font-medium text-emerald-200">Transfer completed</span>
+                </div>
               </div>
-              {transferStatus && <div className="mt-2 text-[11px] text-blue-200">{transferStatus}</div>}
-            </div>
+            )}
+            {warmState === 'cancelled' && (
+              <div className="px-4 py-3 bg-white/5 border-b border-white/10">
+                <span className="text-sm text-white/60">Transfer cancelled — back on original call</span>
+              </div>
+            )}
+
+            {/* Transfer controls (hidden during active warm consultation) */}
+            {warmState !== 'consulting' && warmState !== 'completed' && (
+              <div className="p-3 border-b border-white/10">
+                {/* Cold / Warm toggle */}
+                <div className="flex rounded-lg bg-white/5 p-0.5 mb-3">
+                  <button onClick={() => setTransferMode('cold')}
+                    className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                      transferMode === 'cold' ? 'bg-blue-500 text-white shadow-sm' : 'text-white/50 hover:text-white/80'
+                    }`}>Cold Transfer</button>
+                  <button onClick={() => setTransferMode('warm')}
+                    className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                      transferMode === 'warm' ? 'bg-amber-500 text-white shadow-sm' : 'text-white/50 hover:text-white/80'
+                    }`}>Warm Transfer</button>
+                </div>
+                <p className="text-[10px] text-white/40 mb-2">
+                  {transferMode === 'warm'
+                    ? 'Calls the agent first so you can speak before transferring.'
+                    : 'Transfers the call immediately without speaking to the agent.'}
+                </p>
+                <input
+                  value={transferQuery}
+                  onChange={(e) => setTransferQuery(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') doTransfer(transferQuery); }}
+                  placeholder="Type extension or search name..."
+                  autoFocus
+                  className="w-full px-3 py-2.5 rounded-lg bg-white/95 text-gray-900 text-sm outline-none"
+                />
+                <div className="mt-2 flex gap-1 flex-wrap">
+                  {[
+                    { id: 'all', label: 'All' },
+                    { id: 'user', label: 'Users' },
+                    { id: 'extension', label: 'Extensions' },
+                    { id: 'agent', label: 'Agents' },
+                    { id: 'callcenter', label: 'Call Centers' },
+                    { id: 'ringgroup', label: 'Ring Groups' },
+                    { id: 'contact', label: 'Contacts' },
+                  ].map(f => (
+                    <button key={f.id} onClick={() => setTransferFilter(f.id)}
+                      className={`px-2.5 py-1 text-[10px] font-medium rounded-full transition-colors ${
+                        transferFilter === f.id ? 'bg-blue-500 text-white' : 'bg-white/10 text-white/60 hover:bg-white/20'
+                      }`}>{f.label}</button>
+                  ))}
+                </div>
+                <div className="mt-2 flex gap-2">
+                  <button
+                    onClick={() => doTransfer(transferQuery)}
+                    disabled={transferring || !transferQuery.trim()}
+                    className={`px-3 py-1.5 text-xs rounded-md disabled:opacity-50 text-white font-medium ${
+                      transferMode === 'warm'
+                        ? 'bg-amber-500 hover:bg-amber-600'
+                        : 'bg-blue-500 hover:bg-blue-600'
+                    }`}
+                  >
+                    {transferring ? 'Connecting...' : transferMode === 'warm' ? 'Call Agent' : 'Transfer'}
+                  </button>
+                  <button
+                    onClick={() => { setShowTransferPanel(false); setWarmState(null); setWarmTarget(''); }}
+                    className="px-3 py-1.5 text-xs rounded-md bg-white/10 hover:bg-white/15 text-white/80"
+                  >
+                    Cancel
+                  </button>
+                </div>
+                {transferStatus && <div className="mt-2 text-[11px] text-blue-200">{transferStatus}</div>}
+              </div>
+            )}
 
             <div className="max-h-80 overflow-y-auto">
               {filteredTransferCandidates.length === 0 ? (

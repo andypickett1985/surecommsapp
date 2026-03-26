@@ -21,6 +21,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   warmTransferCall: (number) => ipcRenderer.invoke('sip:warmTransferCall', { number }),
   warmTransferComplete: () => ipcRenderer.invoke('sip:warmTransferComplete'),
   warmTransferCancel: () => ipcRenderer.invoke('sip:warmTransferCancel'),
+      conferenceCall: (n) => ipcRenderer.invoke('sip:conferenceCall', { number: n }),
+      conferenceMerge: () => ipcRenderer.invoke('sip:conferenceMerge'),
   maskRecording: () => ipcRenderer.invoke('sip:maskRecording'),
   unmaskRecording: () => ipcRenderer.invoke('sip:unmaskRecording'),
 

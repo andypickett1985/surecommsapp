@@ -55,6 +55,30 @@ export default function App() {
           });
           break;
         }
+        case 'userCallState': {
+          const uid = data.userId;
+          setState(prev => {
+            const active = { ...prev.activeCalls };
+            if (data.state && data.state !== 'disconnected') {
+              active[uid] = { state: data.state, number: data.number, direction: data.direction, since: Date.now() };
+            } else {
+              delete active[uid];
+            }
+            return { activeCalls: active };
+          });
+          break;
+        }
+        case 'ccStatusChange': {
+          setState(prev => ({
+            callCenter: {
+              ...prev.callCenter,
+              agent: prev.callCenter?.agent?.agent_id && data.userId === prev.user?.id
+                ? { ...prev.callCenter.agent, agent_status: data.ccStatus }
+                : prev.callCenter?.agent,
+            },
+          }));
+          break;
+        }
         case 'presenceChange':
           setState(prev => ({ presence: { ...prev.presence, [data.userId]: data.status } }));
           break;

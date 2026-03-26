@@ -208,6 +208,13 @@ export default function Settings() {
         ...prev,
         agent: prev.agent ? { ...prev.agent, agent_status: ccStatus } : prev.agent,
       }));
+      // Also refresh global store so all components reflect the change
+      setState(prev => ({
+        callCenter: {
+          ...prev.callCenter,
+          agent: prev.callCenter?.agent ? { ...prev.callCenter.agent, agent_status: ccStatus } : prev.callCenter.agent,
+        }
+      }));
     } catch (err) {
       alert(err.message || 'Failed to set call center status');
     }

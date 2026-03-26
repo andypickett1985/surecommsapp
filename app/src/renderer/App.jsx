@@ -30,6 +30,7 @@ export default function App() {
             const hadTranscript = !!localStorage.getItem('scv_active_transcript');
             setState({
               callState: null,
+              incomingCall: null,
               postCallTranscript: hadTranscript ? { number: cleanSipUri(data.number), name: cleanSipUri(data.name), direction: data.direction } : null,
             });
             localStorage.removeItem('scv_active_transcript');
@@ -48,7 +49,7 @@ export default function App() {
           const cid = data.conversationId;
           setState(prev => {
             const msgs = { ...prev.messages };
-            if (msgs[cid]) msgs[cid] = [...msgs[cid], data.message];
+            if (msgs[cid]) { const dup = msgs[cid].some(m => m.id && data.message.id && m.id === data.message.id); if (!dup) msgs[cid] = [...msgs[cid], data.message]; } else { msgs[cid] = [data.message]; }
             const convos = prev.conversations.map(c => c.id === cid ? { ...c, last_message: data.message.body, last_message_at: data.message.created_at, unread_count: String((parseInt(c.unread_count) || 0) + 1) } : c);
             return { messages: msgs, conversations: convos };
           });
@@ -197,7 +198,10 @@ export default function App() {
 
   function addCallToHistory(data) {
     setState(prev => {
-      const entry = { name: cleanSipUri(data.name || ''), number: cleanSipUri(data.number || ''), direction: data.direction || 'out', duration: data.duration || 0, timestamp: new Date().toISOString() };
+      const num = cleanSipUri(data.number || '');
+      if (!num || num.length < 2) return prev; // Ghost call guard
+      const dir = (data.direction === 'in' && (!data.duration || data.duration === 0)) ? 'miss' : (data.direction || 'out');
+      const entry = { name: cleanSipUri(data.name || ''), number: num, direction: dir, duration: data.duration || 0, timestamp: new Date().toISOString() };
       const calls = [entry, ...prev.calls].slice(0, 300);
       localStorage.setItem('scv_calls', JSON.stringify(calls));
       return { calls };

@@ -120,6 +120,7 @@ function AgentTile({ agent, onCall, onChat, onPing, sipAccounts }) {
           {agent.display_name?.split(' ').slice(0, 2).join(' ') || 'Agent'}
         </span>
         {ext && <span className="text-[9px] text-gray-400 -mt-0.5">{ext}</span>}
+        {agent.idle_since && <span className="text-[8px] text-gray-300 -mt-0.5">Idle {Math.round((Date.now() - new Date(agent.idle_since).getTime()) / 60000)}m</span>}
         <span className={`text-[9px] font-medium ${isOnCall ? 'text-orange-600' : isRinging ? 'text-blue-600' : sc.text}`}>
           {isOnCall ? 'On Call' : isRinging ? 'Ringing' : sc.label}
         </span>
@@ -153,7 +154,7 @@ function QueueGroup({ queue, onCall, onChat, onPing, sipAccounts }) {
         </div>
         <div className="flex items-center gap-2">
           {queue.waitingCount > 0 && (
-            <span className="px-1.5 py-0.5 text-[9px] font-bold bg-red-100 text-red-600 rounded-full">
+            <span className="px-1.5 py-0.5 text-[9px] font-bold bg-red-100 text-red-600 rounded-full animate-pulse">
               {queue.waitingCount} waiting
             </span>
           )}

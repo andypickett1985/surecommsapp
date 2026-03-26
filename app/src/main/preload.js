@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   logout: () => ipcRenderer.invoke('app:logout'),
   getSavedSession: () => ipcRenderer.invoke('app:getSavedSession'),
   refreshConfig: () => ipcRenderer.invoke('app:refreshConfig'),
+  checkForUpdates: () => ipcRenderer.invoke('app:checkForUpdates'),
 
   sipStart: (config) => ipcRenderer.invoke('sip:start', config),
   sipStop: () => ipcRenderer.invoke('sip:stop'),
@@ -20,6 +21,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   warmTransferCall: (number) => ipcRenderer.invoke('sip:warmTransferCall', { number }),
   warmTransferComplete: () => ipcRenderer.invoke('sip:warmTransferComplete'),
   warmTransferCancel: () => ipcRenderer.invoke('sip:warmTransferCancel'),
+  maskRecording: () => ipcRenderer.invoke('sip:maskRecording'),
+  unmaskRecording: () => ipcRenderer.invoke('sip:unmaskRecording'),
 
   onSipEvent: (callback) => {
     ipcRenderer.removeAllListeners('sip:event');
@@ -52,6 +55,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('update:progress');
     ipcRenderer.on('update:progress', (_, data) => callback(data));
   },
+
+  onAgentPing: (callback) => {
+    ipcRenderer.removeAllListeners('agent-ping');
+    ipcRenderer.on('agent-ping', (_, data) => callback(data));
+  },
+  openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),
 
   windowMinimize: () => ipcRenderer.invoke('window:minimize'),
   windowMaximize: () => ipcRenderer.invoke('window:maximize'),

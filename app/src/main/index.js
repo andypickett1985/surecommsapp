@@ -14,6 +14,19 @@ let provisionClient = null;
 let wsClient = null;
 let transcriptionService = null;
 
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (!mainWindow.isVisible()) mainWindow.show();
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 900,
@@ -65,8 +78,6 @@ function setupIPC() {
   provisionClient = new ProvisionClient();
   sipEngine = new SipEngine();
 
-  // SIP events are forwarded in the transcription section below
-
   wsClient = new WsClient();
   wsClient.on('event', (data) => {
     if (data.event === 'sipLogRequested') {
@@ -92,9 +103,19 @@ function setupIPC() {
   });
 
   ipcMain.handle('app:login', async (_, { email, password }) => {
-    const result = await provisionClient.login(email, password);
-    if (result?.token) wsClient.connect(result.token);
-    return result;
+    const fs = require('fs');
+    const os = require('os');
+    const logFile = path.join(os.tmpdir(), 'surecloudvoice-login-debug.txt');
+    try {
+      fs.appendFileSync(logFile, `\n[${new Date().toISOString()}] Login attempt: ${email}\n`);
+      const result = await provisionClient.login(email, password);
+      fs.appendFileSync(logFile, `[${new Date().toISOString()}] Login OK: token=${!!result?.token}\n`);
+      if (result?.token) wsClient.connect(result.token);
+      return result;
+    } catch (err) {
+      fs.appendFileSync(logFile, `[${new Date().toISOString()}] Login FAILED: ${err.message} status=${err.status} stack=${err.stack}\n`);
+      return { error: err.message || 'Login failed', status: err.status };
+    }
   });
 
   ipcMain.handle('app:logout', async () => {
@@ -114,7 +135,36 @@ function setupIPC() {
     return provisionClient.refreshConfig();
   });
 
+  ipcMain.handle('app:checkForUpdates', async () => {
+    try {
+      const session = provisionClient.getSavedSession();
+      if (!session?.token) return { error: 'Not logged in' };
+      const https = require('https');
+      const http = require('http');
+      const baseUrl = provisionClient.getBaseUrl();
+      return new Promise((resolve) => {
+        const url = new URL('/api/app-versions/latest', baseUrl);
+        const mod = url.protocol === 'https:' ? https : http;
+        const req = mod.get(url.href, { headers: { 'Authorization': `Bearer ${session.token}` } }, (res) => {
+          let data = '';
+          res.on('data', (chunk) => data += chunk);
+          res.on('end', () => {
+            try {
+              const json = JSON.parse(data);
+              resolve(json);
+            } catch { resolve({ error: 'Invalid response' }); }
+          });
+        });
+        req.on('error', (err) => resolve({ error: err.message }));
+        req.setTimeout(10000, () => { req.destroy(); resolve({ error: 'Timeout' }); });
+      });
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
   ipcMain.handle('sip:start', async (_, config) => {
+    console.log(`[SIP] sipStart config: server=${config.server}, user=${config.username}, transport=${config.transport}, domain=${config.domain}`);
     return sipEngine.start(config);
   });
 
@@ -123,11 +173,19 @@ function setupIPC() {
   });
 
   ipcMain.handle('sip:makeCall', async (_, { number, hasVideo }) => {
-    return sipEngine.sendCommand({ cmd: 'makeCall', number, hasVideo: hasVideo || false });
+    console.log(`[SIP] makeCall requested: number=${number}, hasVideo=${hasVideo}, engineRunning=${sipEngine.running}`);
+    const result = sipEngine.sendCommand({ cmd: 'makeCall', number, hasVideo: hasVideo || false });
+    console.log(`[SIP] makeCall result:`, result);
+    return result;
   });
 
   ipcMain.handle('sip:hangup', async () => {
-    return sipEngine.sendCommand({ cmd: 'hangup' });
+    const diag = { engineRunning: sipEngine.running, processAlive: !!sipEngine.process, stdinWritable: !!sipEngine.process?.stdin?.writable };
+    console.log('[SIP] hangup requested', diag);
+    const result = sipEngine.sendCommand({ cmd: 'hangup' });
+    console.log('[SIP] hangup result:', JSON.stringify(result));
+    mainWindow?.webContents.send('sip:event', { event: 'hangupDiag', ...diag, result: result.success, error: result.error || null });
+    return result;
   });
 
   ipcMain.handle('sip:answer', async (_, { hasVideo }) => {
@@ -139,11 +197,17 @@ function setupIPC() {
   });
 
   ipcMain.handle('sip:toggleMute', async (_, { muted }) => {
-    return sipEngine.sendCommand({ cmd: 'toggleMute', muted });
+    console.log(`[SIP] toggleMute: muted=${muted}`);
+    const result = sipEngine.sendCommand({ cmd: 'toggleMute', muted });
+    console.log(`[SIP] toggleMute result:`, JSON.stringify(result));
+    return result;
   });
 
   ipcMain.handle('sip:toggleHold', async (_, { held }) => {
-    return sipEngine.sendCommand({ cmd: 'toggleHold', held });
+    console.log(`[SIP] toggleHold: held=${held}`);
+    const result = sipEngine.sendCommand({ cmd: 'toggleHold', held });
+    console.log(`[SIP] toggleHold result:`, JSON.stringify(result));
+    return result;
   });
 
   ipcMain.handle('sip:sendDtmf', async (_, { digit }) => {
@@ -151,19 +215,83 @@ function setupIPC() {
   });
 
   ipcMain.handle('sip:transfer', async (_, { number }) => {
+    console.log(`[SIP] transfer requested: number=${number}`);
     return sipEngine.sendCommand({ cmd: 'transfer', number });
   });
 
   ipcMain.handle('sip:warmTransferCall', async (_, { number }) => {
+    console.log(`[SIP] warmTransferCall requested: number=${number}`);
     return sipEngine.sendCommand({ cmd: 'warmTransferCall', number });
   });
 
   ipcMain.handle('sip:warmTransferComplete', async () => {
+    console.log('[SIP] warmTransferComplete requested');
     return sipEngine.sendCommand({ cmd: 'warmTransferComplete' });
   });
 
   ipcMain.handle('sip:warmTransferCancel', async () => {
+    console.log('[SIP] warmTransferCancel requested');
     return sipEngine.sendCommand({ cmd: 'warmTransferCancel' });
+  });
+
+  ipcMain.handle('sip:maskRecording', async () => {
+    try {
+      const session = provisionClient.getSavedSession();
+      if (!session?.token) return { error: 'Not logged in' };
+      const baseUrl = provisionClient.getBaseUrl();
+      const https = require('https');
+      const http = require('http');
+      const url = new URL('/api/call-center/recording/mask', baseUrl);
+      const mod = url.protocol === 'https:' ? https : http;
+      return new Promise((resolve) => {
+        const payload = JSON.stringify({});
+        const req = mod.request(url.href, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${session.token}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+        }, (res) => {
+          let data = '';
+          res.on('data', (chunk) => data += chunk);
+          res.on('end', () => {
+            try { resolve(JSON.parse(data)); } catch { resolve({ success: res.statusCode < 400 }); }
+          });
+        });
+        req.on('error', (err) => resolve({ error: err.message }));
+        req.write(payload);
+        req.end();
+      });
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
+  ipcMain.handle('sip:unmaskRecording', async () => {
+    try {
+      const session = provisionClient.getSavedSession();
+      if (!session?.token) return { error: 'Not logged in' };
+      const baseUrl = provisionClient.getBaseUrl();
+      const https = require('https');
+      const http = require('http');
+      const url = new URL('/api/call-center/recording/unmask', baseUrl);
+      const mod = url.protocol === 'https:' ? https : http;
+      return new Promise((resolve) => {
+        const payload = JSON.stringify({});
+        const req = mod.request(url.href, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${session.token}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+        }, (res) => {
+          let data = '';
+          res.on('data', (chunk) => data += chunk);
+          res.on('end', () => {
+            try { resolve(JSON.parse(data)); } catch { resolve({ success: res.statusCode < 400 }); }
+          });
+        });
+        req.on('error', (err) => resolve({ error: err.message }));
+        req.write(payload);
+        req.end();
+      });
+    } catch (err) {
+      return { error: err.message };
+    }
   });
 
   // Transcription
@@ -207,6 +335,9 @@ function setupIPC() {
 
   // Forward audio data from SIP engine to transcription
   let audioFrameCount = 0;
+  let lastCallId = null;
+  let callAnswered = false;
+
   sipEngine.on('event', (data) => {
     if (data.event === 'audioData') {
       audioFrameCount++;
@@ -219,20 +350,29 @@ function setupIPC() {
     } else {
       mainWindow?.webContents.send('sip:event', data);
 
-      // Report call state changes to server for admin portal visibility
+      wsClient?.sendSipEvent(data);
+
       if (data.event === 'callState') {
         const state = data.state || 'idle';
         const number = data.number || '';
         const direction = data.direction || '';
+
+        if (state === 'confirmed') {
+          callAnswered = true;
+          lastCallId = data.callId;
+        }
+
         wsClient?.reportCallState(state, number, direction);
         if (state === 'disconnected') {
           wsClient?.reportCallState(null, null, null);
+          lastCallId = null;
+          callAnswered = false;
         }
       } else if (data.event === 'incomingCall') {
+        callAnswered = false;
+        lastCallId = data.callId;
         wsClient?.reportCallState('ringing', data.number || '', 'in');
-      }
 
-      if (data.event === 'incomingCall') {
         if (mainWindow) {
           if (!mainWindow.isVisible()) mainWindow.show();
           if (mainWindow.isMinimized()) mainWindow.restore();
@@ -261,6 +401,27 @@ function setupIPC() {
           notif.show();
         }
       }
+
+      if (data.event === 'agentPing') {
+        if (mainWindow) {
+          mainWindow.flashFrame(true);
+          if (!mainWindow.isVisible()) mainWindow.show();
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.focus();
+        }
+        const { Notification } = require('electron');
+        if (Notification.isSupported()) {
+          const notif = new Notification({
+            title: 'Agent Ping',
+            body: data.message || `${data.from || 'Someone'} is trying to reach you`,
+            icon: path.join(__dirname, '../../assets/icon.ico'),
+            urgency: 'critical',
+          });
+          notif.on('click', () => { if (mainWindow) { mainWindow.show(); mainWindow.focus(); } });
+          notif.show();
+        }
+        mainWindow?.webContents.send('agent-ping', data);
+      }
     }
   });
 
@@ -281,7 +442,7 @@ function setupIPC() {
     const os = require('os');
     const { spawn } = require('child_process');
 
-    const tempPath = path.join(os.tmpdir(), 'hypercloud-update.exe');
+    const tempPath = path.join(os.tmpdir(), 'surecloudvoice-update.exe');
     const fullUrl = downloadUrl.startsWith('http') ? downloadUrl : `https://communicator.surecloudvoice.com${downloadUrl}`;
 
     return new Promise((resolve, reject) => {
@@ -323,7 +484,21 @@ function setupIPC() {
 
           setTimeout(() => {
             try {
-              spawn(tempPath, ['/S'], { detached: true, stdio: 'ignore' }).unref();
+              const appExePath = process.execPath;
+              const pid = process.pid;
+              const batPath = path.join(os.tmpdir(), 'surecloudvoice-update.bat');
+              const batContent = [
+                '@echo off',
+                `taskkill /PID ${pid} /F >nul 2>&1`,
+                'timeout /t 2 /nobreak >nul',
+                `"${tempPath}" /S`,
+                'timeout /t 5 /nobreak >nul',
+                `start "" "${appExePath}"`,
+                'timeout /t 2 /nobreak >nul',
+                'del "%~f0"',
+              ].join('\r\n') + '\r\n';
+              fs.writeFileSync(batPath, batContent);
+              spawn('cmd.exe', ['/c', batPath], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
               app.isQuitting = true;
               app.quit();
             } catch (err) {
@@ -342,6 +517,13 @@ function setupIPC() {
         resolve({ success: false, error: err.message });
       });
     });
+  });
+
+  ipcMain.handle('app:openExternal', (_, url) => {
+    const { shell } = require('electron');
+    if (url && (url.startsWith('mailto:') || url.startsWith('https://') || url.startsWith('http://'))) {
+      shell.openExternal(url);
+    }
   });
 
   ipcMain.handle('window:minimize', () => mainWindow?.minimize());
@@ -365,5 +547,3 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   sipEngine?.stop();
 });
-
-

@@ -13,6 +13,20 @@ class SipEngine extends EventEmitter {
     this.logCaptureTimer = null;
   }
 
+  _tryFixJson(raw) {
+    try {
+      const numStart = raw.indexOf('"number":"');
+      if (numStart < 0) return null;
+      const valStart = numStart + 10;
+      let boundary = raw.lastIndexOf('","name":"');
+      if (boundary < valStart) boundary = raw.lastIndexOf('"}');
+      if (boundary < valStart) return null;
+      const numVal = raw.substring(valStart, boundary);
+      const escaped = numVal.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      return JSON.parse(raw.substring(0, valStart) + escaped + raw.substring(boundary));
+    } catch { return null; }
+  }
+
   startLogCapture(durationSec) {
     this.logCapture = [];
     if (this.logCaptureTimer) clearTimeout(this.logCaptureTimer);
@@ -59,8 +73,14 @@ class SipEngine extends EventEmitter {
                 this.emit('event', event);
               }
             } catch (e) {
-              console.log('[SIP RAW]', line.trim().substring(0, 100));
-              if (this.logCapture) this.logCapture.push(line.trim());
+              const fixed = this._tryFixJson(line.trim());
+              if (fixed) {
+                console.log('[SIP EVENT fixed]', fixed.event, fixed.state || fixed.code || '');
+                this.emit('event', fixed);
+              } else {
+                console.log('[SIP RAW]', line.trim().substring(0, 100));
+                if (this.logCapture) this.logCapture.push(line.trim());
+              }
             }
           }
         }
@@ -72,8 +92,10 @@ class SipEngine extends EventEmitter {
         if (this.logCapture) this.logCapture.push(txt);
       });
 
-      this.process.on('exit', (code) => {
+      this.process.on('exit', (code, signal) => {
+        console.error('[SIP ENGINE] Process exited! code:', code, 'signal:', signal);
         this.running = false;
+        this.process = null;
         this.emit('event', { event: 'engineStopped', code });
       });
 
@@ -108,12 +130,23 @@ class SipEngine extends EventEmitter {
 
   sendCommand(cmd) {
     if (!this.process?.stdin?.writable) {
+      console.warn('[SIP] sendCommand failed: engine not running, cmd:', cmd.cmd);
       return { success: false, error: 'SIP engine not running' };
     }
     try {
-      this.process.stdin.write(JSON.stringify(cmd) + '\n');
+      if (cmd.cmd === 'warmTransferCall' && cmd.number && cmd.number.includes('@')) {
+        const original = cmd.number;
+        cmd = { ...cmd, number: cmd.number.split('@')[0] };
+        console.log(`[SIP] warmTransferCall domain strip: "${original}" -> "${cmd.number}"`);
+      }
+      const json = JSON.stringify(cmd);
+      if (cmd.cmd !== 'enableAudioCapture' && cmd.cmd !== 'enableLogging') {
+        console.log(`[SIP] sendCommand: ${json.substring(0, 200)}`);
+      }
+      this.process.stdin.write(json + '\n');
       return { success: true };
     } catch (err) {
+      console.error('[SIP] sendCommand error:', err.message, 'cmd:', cmd.cmd);
       return { success: false, error: err.message };
     }
   }

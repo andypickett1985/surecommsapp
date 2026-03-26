@@ -11,6 +11,10 @@ class ProvisionClient {
     this.tokenFile = path.join(app.getPath('userData'), 'session.json');
   }
 
+  getBaseUrl() {
+    return PROVISION_SERVER;
+  }
+
   async login(email, password) {
     const data = await this._post('/api/auth/login', {
       email,
@@ -115,7 +119,7 @@ class ProvisionClient {
           }
         });
       });
-      req.on('error', reject);
+      req.on('error', (err) => { console.error('Provision request error:', err.message); reject(err); });
       if (payload) req.write(payload);
       req.end();
     });
